@@ -6,8 +6,14 @@ import { Fader } from './Fader.jsx';
 const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
 const NAME_MAX_LEN = 31;
 
+const AUDIO_IN_LVL_SWITCH_OPTIONS = [
+  { value: 'LINE_LVL',     label: 'LN',  title: 'Line level'  },
+  { value: 'MIC_LVL_26DB', label: '+26', title: 'Mic (+26 dB)' },
+  { value: 'MIC_LVL_46DB', label: '+46', title: 'Mic (+46 dB)' },
+];
+
 export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sendSet, meterLevelsRef }) {
-  const { name, mute, gain, alwaysOn, intellimixMode, gateOpen, inputSource } = data;
+  const { name, mute, gain, alwaysOn, intellimixMode, gateOpen, inputSource, phantomPower, micSens } = data;
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
 
@@ -132,6 +138,40 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
           NET
         </button>
       </div>
+
+      {/* Analog-only: Mic sensitivity selector */}
+      {isAnalog && (
+        <div className="flex w-full gap-0.5">
+          {AUDIO_IN_LVL_SWITCH_OPTIONS.map(({ value, label, title }) => (
+            <button
+              key={value}
+              title={title}
+              onClick={() => sendSet(channelIndex, 'AUDIO_IN_LVL_SWITCH', value)}
+              className={`flex-1 py-0.5 text-[8px] rounded font-bold transition-colors ${
+                micSens === value
+                  ? 'bg-teal-700 text-white'
+                  : 'bg-zinc-700 text-zinc-500 hover:bg-zinc-600'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Analog-only: 48V Phantom Power */}
+      {isAnalog && (
+        <button
+          onClick={() => sendSet(channelIndex, 'PHANTOM_PWR_ENABLE', phantomPower ? 'OFF' : 'ON')}
+          className={`w-full py-0.5 text-[9px] rounded font-bold tracking-wider transition-colors ${
+            phantomPower
+              ? 'bg-red-800 text-red-200 shadow-[0_0_6px_#991b1b]'
+              : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+          }`}
+        >
+          +48V
+        </button>
+      )}
 
       {/* Intellimix mode */}
       <select

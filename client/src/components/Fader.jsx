@@ -5,29 +5,29 @@ const CAP_HEIGHT = 16;
 const TRACK_TRAVEL = TRACK_HEIGHT - CAP_HEIGHT;
 
 // AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps
-// 1280 = 0 dB (unity/full level), lower = more attenuation
-const GAIN_UNITY = 1280;
+// Raw 1280 = +18 dB (max), raw 1100 = 0 dB (unity), raw 0 = -∞
+// Formula: dB = (raw - 1280) / 10 + 18  →  raw = (db - 18) * 10 + 1280
 
 function rawToDb(raw) {
   if (raw <= 0) return -Infinity;
-  return (raw - GAIN_UNITY) / 10;
+  return (raw - 1280) / 10 + 18;
 }
 
 function dbToRaw(db) {
   if (!isFinite(db)) return 0;
-  return Math.max(0, Math.min(GAIN_UNITY, Math.round(db * 10 + GAIN_UNITY)));
+  return Math.max(0, Math.min(1280, Math.round((db - 18) * 10 + 1280)));
 }
 
-// Piece-wise log scale: bottom = -∞, top = 0 dB (unity)
+// Piece-wise log scale: bottom = -∞, top = +18 dB (matches official Shure app range)
 const STOPS = [
-  { pos: 0.00, db: -Infinity, label: '-∞' },
+  { pos: 0.00, db: -Infinity, label: '-∞'  },
   { pos: 0.07, db: -80,       label: '-80' },
   { pos: 0.20, db: -50,       label: '-50' },
   { pos: 0.38, db: -30,       label: '-30' },
   { pos: 0.55, db: -20,       label: '-20' },
   { pos: 0.70, db: -10,       label: '-10' },
-  { pos: 0.83, db: -6,        label: '-6'  },
-  { pos: 1.00, db: 0,         label: '0'   },
+  { pos: 0.83, db: 0,         label: '0'   },
+  { pos: 1.00, db: 18,        label: '+18' },
 ];
 
 function posToDb(pos) {
@@ -55,16 +55,18 @@ function dbToPos(db) {
   return STOPS[STOPS.length - 1].pos;
 }
 
+const GAIN_0DB = 1100; // raw value for 0 dB (unity)
+
 // value prop is raw 0-1280 device integer; onChange(rawInt) sends back to device
 export function Fader({ value, onChange }) {
-  const [localDb, setLocalDb] = useState(rawToDb(value ?? GAIN_UNITY));
+  const [localDb, setLocalDb] = useState(rawToDb(value ?? GAIN_0DB));
   const containerRef = useRef(null);
   const isDragging = useRef(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   useEffect(() => {
-    if (!isDragging.current) setLocalDb(rawToDb(value ?? GAIN_UNITY));
+    if (!isDragging.current) setLocalDb(rawToDb(value ?? GAIN_0DB));
   }, [value]);
 
   function computeDb(clientY) {
@@ -98,8 +100,8 @@ export function Fader({ value, onChange }) {
   const capBottomPx = Math.round(capPos * TRACK_TRAVEL);
 
   const displayLabel = !isFinite(localDb)
-    ? '-∞'
-    : `${Math.round(localDb)} dB`;
+    ? '-∞ dB'
+    : `${localDb >= 0 ? '+' : ''}${Math.round(localDb)} dB`;
 
   return (
     <div className="flex flex-col items-center gap-1">

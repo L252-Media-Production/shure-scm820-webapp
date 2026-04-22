@@ -34,6 +34,8 @@ function requestInitialState() {
     bridge.sendGet(ch, 'INTELLIMIX_MODE');
     bridge.sendGet(ch, 'INPUT_AUDIO_GATE_A');
     bridge.sendGet(ch, 'INPUT_AUDIO_SOURCE');
+    bridge.sendGet(ch, 'PHANTOM_PWR_ENABLE');
+    bridge.sendGet(ch, 'AUDIO_IN_LVL_SWITCH');
   }
   for (const ch of [18, 19]) {
     bridge.sendGet(ch, 'CHAN_NAME');

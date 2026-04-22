@@ -11,18 +11,20 @@ const SAMPLE_LEVEL_COUNT = 19;
 const DEFAULT_NAMES = ['Podium', 'Panel L', 'Panel R', 'Table 1', 'Table 2', 'Table 3', 'Floor', 'Aux'];
 const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
 
-// AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps; 1280 = 0 dB (unity)
-const GAIN_UNITY = 1280;
+// AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps; 1100 = 0 dB (unity), 1280 = +18 dB
+const GAIN_0DB = 1100;
 
 function makeChannelState() {
   return {
     name: '',
     mute: 'OFF',
-    gain: GAIN_UNITY,
+    gain: GAIN_0DB,
     alwaysOn: 'OFF',
     intellimix: 'CLASSIC',
     gate: 'OFF',
     inputSource: 'Analog',
+    phantomPower: 'OFF',
+    micSens: 'LINE_LVL',
   };
 }
 
@@ -73,6 +75,8 @@ export function startMock(port) {
         sock.write(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix) + '\r\n');
         sock.write(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate) + '\r\n');
         sock.write(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource) + '\r\n');
+        sock.write(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens) + '\r\n');
       }
       for (const ch of [18, 19]) {
         const s = channels[ch];
@@ -129,8 +133,16 @@ export function startMock(port) {
             broadcast(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix));
             break;
           case 'INPUT_AUDIO_SOURCE':
-            s.inputSource = (value === 'Network' || value === 'Analog') ? value : 'Analog';
+            s.inputSource = /^network|^dante/i.test(value) ? 'Network' : 'Analog';
             broadcast(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource));
+            break;
+          case 'PHANTOM_PWR_ENABLE':
+            s.phantomPower = value === 'ON' ? 'ON' : 'OFF';
+            broadcast(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower));
+            break;
+          case 'AUDIO_IN_LVL_SWITCH':
+            s.micSens = value;
+            broadcast(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens));
             break;
           default:
             debug('Unhandled SET param: %s', param);
@@ -157,6 +169,8 @@ export function startMock(port) {
           case 'INTELLIMIX_MODE': writeSingle(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix)); break;
           case 'INPUT_AUDIO_GATE_A': writeSingle(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate)); break;
           case 'INPUT_AUDIO_SOURCE': writeSingle(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource)); break;
+          case 'PHANTOM_PWR_ENABLE': writeSingle(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower)); break;
+          case 'AUDIO_IN_LVL_SWITCH': writeSingle(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens)); break;
           default:
             debug('Unhandled GET param: %s', param);
         }
