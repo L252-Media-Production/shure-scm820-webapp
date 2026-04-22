@@ -21,17 +21,71 @@ function defaultChannel() {
   };
 }
 
+const DEVICE_PARAM_MAP = {
+  DEVICE_ID:                      'deviceId',
+  SERIAL_NUM:                     'serialNum',
+  FW_VER:                         'fwVer',
+  IP_SUBNET_SHURE_CONTROL:        'ipSubnetControl',
+  IP_GATEWAY_SHURE_CONTROL:       'ipGatewayControl',
+  NETWORK_AUDIO_PROTOCOL:         'networkAudioProtocol',
+  NETWORK_AUDIO_VER:              'networkAudioVer',
+  IP_ADDR_NET_AUDIO_PRIMARY:      'ipAddrPrimary',
+  IP_SUBNET_NET_AUDIO_PRIMARY:    'ipSubnetPrimary',
+  IP_GATEWAY_NET_AUDIO_PRIMARY:   'ipGatewayPrimary',
+  IP_ADDR_NET_AUDIO_SECONDARY:    'ipAddrSecondary',
+  IP_SUBNET_NET_AUDIO_SECONDARY:  'ipSubnetSecondary',
+  IP_GATEWAY_NET_AUDIO_SECONDARY: 'ipGatewaySecondary',
+  INPUT_METER_MODE:               'inputMeterMode',
+  METER_TYPE:                     'meterType',
+  HEADPHONE_SOURCE:               'headphoneSource',
+  METER_RATE:                     'meterRate',
+  DISABLE_LEDS:                   'disableLeds',
+  FLASH:                          'flash',
+  REAR_PANEL_LOCK:                'rearPanelLock',
+};
+
 export const useMixerStore = create((set) => ({
   connected: false,
   channels: Object.fromEntries(
     [...INPUT_CHANNELS, AUX_CHANNEL, ...OUTPUT_CHANNELS].map((ch) => [ch, defaultChannel()])
   ),
 
-  deviceInfo: { host: '', deviceId: null },
+  deviceInfo: {
+    host: '',
+    mac: null,
+    deviceId: null,
+    serialNum: null,
+    fwVer: null,
+    ipSubnetControl: null,
+    ipGatewayControl: null,
+    networkAudioProtocol: null,
+    networkAudioVer: null,
+    ipAddrPrimary: null,
+    ipSubnetPrimary: null,
+    ipGatewayPrimary: null,
+    ipAddrSecondary: null,
+    ipSubnetSecondary: null,
+    ipGatewaySecondary: null,
+    inputMeterMode: null,
+    meterType: null,
+    headphoneSource: null,
+    meterRate: null,
+    disableLeds: null,
+    flash: null,
+    rearPanelLock: null,
+  },
 
   setConnected: (connected) => set({ connected }),
 
   setDeviceInfo: (info) => set((state) => ({ deviceInfo: { ...state.deviceInfo, ...info } })),
+
+  applyDeviceParam: (param, value) =>
+    set((state) => {
+      const key = DEVICE_PARAM_MAP[param];
+      if (!key) return {};
+      const stripped = typeof value === 'string' ? value.replace(/^\{|\}$/g, '').trim() : value;
+      return { deviceInfo: { ...state.deviceInfo, [key]: stripped } };
+    }),
 
   applyRep: ({ channel, param, value }) =>
     set((state) => {

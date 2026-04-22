@@ -4,33 +4,160 @@ import { useMixerStore } from './state/mixerStore.js';
 import { MixerLayout } from './components/MixerLayout.jsx';
 import { ConnectionModal } from './components/ConnectionModal.jsx';
 
-function StatusPopover({ deviceInfo, connected, onHostChange, onClose }) {
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-zinc-500 shrink-0">{label}</span>
+      <span className="text-zinc-200 font-mono text-right truncate max-w-[170px]">{value || '—'}</span>
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mt-2 mb-1">{children}</div>
+  );
+}
+
+function SegBtn({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 py-0.5 text-[9px] font-bold rounded transition-colors ${
+        active ? 'bg-blue-700 text-white' : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
   const [host, setHost] = useState(deviceInfo.host || '');
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => { setHost(deviceInfo.host || ''); }, [deviceInfo.host]);
 
   function handleSubmit(e) {
     e.preventDefault();
     if (host.trim()) onHostChange(host.trim());
   }
 
+  const meterRateDisplay = deviceInfo.meterRate != null
+    ? `${parseInt(deviceInfo.meterRate, 10)} ms`
+    : null;
+
   return (
-    <div className="absolute right-0 top-full mt-2 w-72 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50">
-      <div className="space-y-2 mb-4 text-xs font-mono">
+    <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
+
+      {/* Always-visible summary */}
+      <div className="space-y-1.5 mb-3 text-xs">
         <div className="flex justify-between">
           <span className="text-zinc-500">Status</span>
-          <span className={connected ? 'text-green-400' : 'text-red-400'}>
+          <span className={connected ? 'text-green-400 font-mono' : 'text-red-400 font-mono'}>
             {connected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">Device IP</span>
-          <span className="text-zinc-200">{deviceInfo.host || '—'}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-zinc-500 shrink-0">Device ID</span>
-          <span className="text-zinc-200 text-right truncate">{deviceInfo.deviceId || '—'}</span>
-        </div>
+        <InfoRow label="Device IP"  value={deviceInfo.host} />
+        <InfoRow label="Device ID"  value={deviceInfo.deviceId} />
+        <InfoRow label="Serial"     value={deviceInfo.serialNum} />
+        <InfoRow label="Firmware"   value={deviceInfo.fwVer} />
       </div>
 
+      {/* Expand toggle */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-wider hover:text-zinc-300 pb-2 transition-colors border-b border-zinc-700 mb-3"
+      >
+        <span>Device Details</span>
+        <span className="text-zinc-600">{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {expanded && (
+        <div className="space-y-1 mb-4 text-xs">
+
+          <SectionLabel>Control Network</SectionLabel>
+          <InfoRow label="Subnet"  value={deviceInfo.ipSubnetControl} />
+          <InfoRow label="Gateway" value={deviceInfo.ipGatewayControl} />
+
+          <SectionLabel>Audio Network</SectionLabel>
+          <InfoRow label="Protocol" value={deviceInfo.networkAudioProtocol} />
+          <InfoRow label="Version"  value={deviceInfo.networkAudioVer} />
+
+          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Primary Interface</div>
+          <InfoRow label="IP"      value={deviceInfo.ipAddrPrimary} />
+          <InfoRow label="Subnet"  value={deviceInfo.ipSubnetPrimary} />
+          <InfoRow label="Gateway" value={deviceInfo.ipGatewayPrimary} />
+
+          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Secondary Interface</div>
+          <InfoRow label="IP"      value={deviceInfo.ipAddrSecondary} />
+          <InfoRow label="Subnet"  value={deviceInfo.ipSubnetSecondary} />
+          <InfoRow label="Gateway" value={deviceInfo.ipGatewaySecondary} />
+
+          <SectionLabel>Device Settings</SectionLabel>
+
+          {/* Input Meter Mode */}
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">Meter Input</div>
+            <div className="flex gap-1">
+              <SegBtn active={deviceInfo.inputMeterMode === 'PRE_FADER'}  onClick={() => sendSet(null, 'INPUT_METER_MODE', 'PRE_FADER')}>PRE</SegBtn>
+              <SegBtn active={deviceInfo.inputMeterMode === 'POST_FADER'} onClick={() => sendSet(null, 'INPUT_METER_MODE', 'POST_FADER')}>POST</SegBtn>
+            </div>
+          </div>
+
+          {/* Meter Type */}
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">Meter Type</div>
+            <div className="flex gap-1">
+              <SegBtn active={deviceInfo.meterType === 'VU'}      onClick={() => sendSet(null, 'METER_TYPE', 'VU')}>VU</SegBtn>
+              <SegBtn active={deviceInfo.meterType === 'PEAK'}    onClick={() => sendSet(null, 'METER_TYPE', 'PEAK')}>PEAK</SegBtn>
+              <SegBtn active={deviceInfo.meterType === 'VU_PEAK'} onClick={() => sendSet(null, 'METER_TYPE', 'VU_PEAK')}>VU+PK</SegBtn>
+            </div>
+          </div>
+
+          {/* Headphone Source */}
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">HP Source</div>
+            <div className="flex gap-1">
+              <SegBtn active={deviceInfo.headphoneSource === 'PRE_FADER'}  onClick={() => sendSet(null, 'HEADPHONE_SOURCE', 'PRE_FADER')}>PRE</SegBtn>
+              <SegBtn active={deviceInfo.headphoneSource === 'POST_FADER'} onClick={() => sendSet(null, 'HEADPHONE_SOURCE', 'POST_FADER')}>POST</SegBtn>
+            </div>
+          </div>
+
+          {/* Meter Rate (read-only — set by server automatically) */}
+          <InfoRow label="Meter Rate" value={meterRateDisplay} />
+
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">LEDs</div>
+            <div className="flex gap-1">
+              <SegBtn active={deviceInfo.disableLeds === 'ON'}  onClick={() => sendSet(null, 'DISABLE_LEDS', 'ON')}>ON</SegBtn>
+              <SegBtn active={deviceInfo.disableLeds === 'OFF'} onClick={() => sendSet(null, 'DISABLE_LEDS', 'OFF')}>OFF</SegBtn>
+            </div>
+          </div>
+
+          {/* Flash LEDs */}
+          <div className="py-0.5">
+            <button
+              onClick={() => sendSet(null, 'FLASH', 'ON')}
+              className="w-full py-1 text-[10px] font-bold rounded bg-zinc-700 text-zinc-300 hover:bg-amber-600 hover:text-white transition-colors"
+            >
+              FLASH LEDs
+            </button>
+          </div>
+
+          {/* Rear Panel Lock */}
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">Rear Panel</div>
+            <div className="flex gap-1">
+              <SegBtn active={deviceInfo.rearPanelLock === 'UNLOCK'} onClick={() => sendSet(null, 'REAR_PANEL_LOCK', 'UNLOCK')}>UNLOCK</SegBtn>
+              <SegBtn active={deviceInfo.rearPanelLock === 'LOCK'}   onClick={() => sendSet(null, 'REAR_PANEL_LOCK', 'LOCK')}>LOCK</SegBtn>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Change IP */}
       <div className="border-t border-zinc-700 pt-3">
         <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Change IP Address</div>
         <form onSubmit={handleSubmit} className="flex gap-2">
@@ -116,8 +243,8 @@ export default function App() {
               <StatusPopover
                 deviceInfo={deviceInfo}
                 connected={connected}
+                sendSet={sendSet}
                 onHostChange={handleHostChange}
-                onClose={() => setShowPopover(false)}
               />
             </>
           )}

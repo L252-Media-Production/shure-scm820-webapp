@@ -13,6 +13,7 @@ export function useSCM820() {
   const meterLevelsRef = useRef([]);
   const setConnected = useMixerStore((s) => s.setConnected);
   const applyRep = useMixerStore((s) => s.applyRep);
+  const applyDeviceParam = useMixerStore((s) => s.applyDeviceParam);
   const setDeviceInfo = useMixerStore((s) => s.setDeviceInfo);
 
   const sendSet = useCallback((channel, param, value) => {
@@ -73,9 +74,10 @@ export function useSCM820() {
             setDeviceInfo({ host: msg.host, mac: msg.mac });
             break;
           case 'REP':
-            if (msg.param === 'DEVICE_ID') {
-              setDeviceInfo({ deviceId: msg.value.replace(/^\{|\}$/g, '').trim() });
-            } else if (msg.channel !== 0) {
+            // Channel 0 = global device REP (no channel in protocol message)
+            if (msg.channel === 0) {
+              applyDeviceParam(msg.param, msg.value);
+            } else {
               applyRep(msg);
             }
             break;
@@ -93,7 +95,7 @@ export function useSCM820() {
       clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [setConnected, applyRep, setDeviceInfo]);
+  }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
 
   return { sendSet, meterLevelsRef, updateDeviceHost };
 }

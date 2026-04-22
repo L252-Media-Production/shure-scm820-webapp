@@ -42,7 +42,16 @@ function requestInitialState() {
     bridge.sendGet(ch, 'AUDIO_MUTE');
     bridge.sendGet(ch, 'AUDIO_GAIN_HI_RES');
   }
-  bridge.sendGet(null, 'DEVICE_ID');
+  for (const p of [
+    'DEVICE_ID', 'SERIAL_NUM', 'FW_VER',
+    'IP_SUBNET_SHURE_CONTROL', 'IP_GATEWAY_SHURE_CONTROL',
+    'NETWORK_AUDIO_PROTOCOL', 'NETWORK_AUDIO_VER',
+    'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
+    'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
+    'INPUT_METER_MODE', 'METER_TYPE', 'HEADPHONE_SOURCE', 'DISABLE_LEDS', 'REAR_PANEL_LOCK',
+  ]) {
+    bridge.sendGet(null, p);
+  }
 }
 
 if (USE_MOCK) {
