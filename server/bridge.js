@@ -34,6 +34,12 @@ export function createBridge(host, port) {
         buffer = buffer.slice(idx + 1);
         if (!raw) continue;
         debug('[← SCM820] %s', raw);
+        // Skip high-frequency frames that would spam the terminal
+        if (
+          !raw.startsWith('< SAMPLE') &&
+          !raw.includes('AUDIO_OUT_PEAK_LVL') &&
+          !raw.includes('AUDIO_IN_PEAK_LVL')
+        ) console.log(`[← SCM820] ${raw}`);
         const msg = parse(raw);
         if (msg.type === 'UNKNOWN') {
           debug('Discarding unknown frame: %s', raw);
@@ -63,6 +69,8 @@ export function createBridge(host, port) {
       return;
     }
     debug('[→ SCM820] %s', raw);
+    // Skip METER_RATE spam — log everything else
+    if (!raw.includes('METER_RATE')) console.log(`[→ SCM820] ${raw}`);
     socket.write(raw + '\r\n');
   }
 

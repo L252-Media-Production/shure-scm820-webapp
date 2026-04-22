@@ -9,18 +9,20 @@ const AUX_CHANNEL = 9;
 const SAMPLE_LEVEL_COUNT = 19;
 
 const DEFAULT_NAMES = ['Podium', 'Panel L', 'Panel R', 'Table 1', 'Table 2', 'Table 3', 'Floor', 'Aux'];
-const INTELLIMIX_MODES = ['CLASSIC', 'NOISE_ADAPTIVE', 'GATING', 'MANUAL'];
+const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
+
+// AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps; 1280 = 0 dB (unity)
+const GAIN_UNITY = 1280;
 
 function makeChannelState() {
   return {
     name: '',
-    muteA: 'OFF',
-    muteB: 'OFF',
-    gainA: '0',
+    mute: 'OFF',
+    gain: GAIN_UNITY,
     alwaysOn: 'OFF',
     intellimix: 'CLASSIC',
     gate: 'OFF',
-    inputType: 'ANALOG',
+    inputSource: 'Analog',
   };
 }
 
@@ -31,7 +33,6 @@ export function startMock(port) {
       channels[ch] = { ...makeChannelState(), name: DEFAULT_NAMES[ch - 1] };
     }
     channels[AUX_CHANNEL] = { ...makeChannelState(), name: 'Aux' };
-    // Mix bus outputs (18 = Output A, 19 = Output B)
     channels[18] = { ...makeChannelState(), name: 'Output A' };
     channels[19] = { ...makeChannelState(), name: 'Output B' };
 
@@ -58,26 +59,29 @@ export function startMock(port) {
       }
     }
 
+    function padGain(raw) {
+      return String(raw).padStart(4, '0');
+    }
+
     function sendInitialState(sock) {
       for (let ch = 1; ch <= INPUT_CHANNEL_COUNT; ch++) {
         const s = channels[ch];
-        sock.write(serializeRep(ch, 'CHAN_NAME', s.name) + '\r\n');
-        sock.write(serializeRep(ch, 'CHAN_MUTE_A', s.muteA) + '\r\n');
-        sock.write(serializeRep(ch, 'CHAN_MUTE_B', s.muteB) + '\r\n');
-        sock.write(serializeRep(ch, 'INPUT_GAIN_HI_A', s.gainA) + '\r\n');
+        sock.write(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_MUTE', s.mute) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain)) + '\r\n');
         sock.write(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', s.alwaysOn) + '\r\n');
         sock.write(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix) + '\r\n');
         sock.write(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate) + '\r\n');
-        sock.write(serializeRep(ch, 'INPUT_TYPE', s.inputType) + '\r\n');
+        sock.write(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource) + '\r\n');
       }
-      // Output channels initial state
       for (const ch of [18, 19]) {
         const s = channels[ch];
         if (!s) continue;
-        sock.write(serializeRep(ch, 'CHAN_NAME', s.name) + '\r\n');
-        sock.write(serializeRep(ch, 'CHAN_MUTE_A', s.muteA) + '\r\n');
-        sock.write(serializeRep(ch, 'CHAN_MUTE_B', s.muteB) + '\r\n');
+        sock.write(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_MUTE', s.mute) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain)) + '\r\n');
       }
+      sock.write(serializeRep(null, 'DEVICE_ID', '{SCM820-MOCK-001              }') + '\r\n');
     }
 
     function handleMessage(msg, writeSingle) {
@@ -88,33 +92,34 @@ export function startMock(port) {
       if (msg.type === 'SET') {
         if (ch === 0 && param === 'METER_RATE') {
           setMeterRate(parseInt(value, 10));
+          writeSingle(serializeRep(null, 'METER_RATE', String(parseInt(value, 10)).padStart(5, '0')));
           return;
         }
+
+        if (ch === null && param === 'DEVICE_ID') return;
 
         const s = channels[ch];
         if (!s) return;
 
         switch (param) {
-          case 'CHAN_NAME':
-            s.name = String(value).slice(0, 12);
-            broadcast(serializeRep(ch, 'CHAN_NAME', s.name));
-            break;
-          case 'CHAN_MUTE_A': {
-            const v = value === 'TOGGLE' ? (s.muteA === 'ON' ? 'OFF' : 'ON') : value;
-            s.muteA = v;
-            broadcast(serializeRep(ch, 'CHAN_MUTE_A', v));
+          case 'CHAN_NAME': {
+            const stripped = String(value).replace(/^\{|\}$/g, '').trim().slice(0, 31);
+            s.name = stripped;
+            broadcast(serializeRep(ch, 'CHAN_NAME', `{${stripped.padEnd(31)}}`));
             break;
           }
-          case 'CHAN_MUTE_B': {
-            const v = value === 'TOGGLE' ? (s.muteB === 'ON' ? 'OFF' : 'ON') : value;
-            s.muteB = v;
-            broadcast(serializeRep(ch, 'CHAN_MUTE_B', v));
+          case 'AUDIO_MUTE': {
+            const v = value === 'TOGGLE' ? (s.mute === 'ON' ? 'OFF' : 'ON') : value;
+            s.mute = v;
+            broadcast(serializeRep(ch, 'AUDIO_MUTE', v));
             break;
           }
-          case 'INPUT_GAIN_HI_A':
-            s.gainA = value;
-            broadcast(serializeRep(ch, 'INPUT_GAIN_HI_A', value));
+          case 'AUDIO_GAIN_HI_RES': {
+            const raw = Math.max(0, Math.min(1280, parseInt(value, 10)));
+            s.gain = isNaN(raw) ? GAIN_UNITY : raw;
+            broadcast(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain)));
             break;
+          }
           case 'ALWAYS_ON_ENABLE_A':
             s.alwaysOn = value;
             broadcast(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', value));
@@ -123,9 +128,9 @@ export function startMock(port) {
             s.intellimix = INTELLIMIX_MODES.includes(value) ? value : 'CLASSIC';
             broadcast(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix));
             break;
-          case 'INPUT_TYPE':
-            s.inputType = value === 'DANTE' ? 'DANTE' : 'ANALOG';
-            broadcast(serializeRep(ch, 'INPUT_TYPE', s.inputType));
+          case 'INPUT_AUDIO_SOURCE':
+            s.inputSource = (value === 'Network' || value === 'Analog') ? value : 'Analog';
+            broadcast(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource));
             break;
           default:
             debug('Unhandled SET param: %s', param);
@@ -134,17 +139,24 @@ export function startMock(port) {
       }
 
       if (msg.type === 'GET') {
+        if (ch === null && param === 'DEVICE_ID') {
+          writeSingle(serializeRep(null, 'DEVICE_ID', '{SCM820-MOCK-001              }'));
+          return;
+        }
+        if (ch === 0 && param === 'DEVICE_ID') {
+          writeSingle(serializeRep(null, 'DEVICE_ID', '{SCM820-MOCK-001              }'));
+          return;
+        }
         const s = channels[ch];
         if (!s) return;
         switch (param) {
-          case 'CHAN_NAME': writeSingle(serializeRep(ch, 'CHAN_NAME', s.name)); break;
-          case 'CHAN_MUTE_A': writeSingle(serializeRep(ch, 'CHAN_MUTE_A', s.muteA)); break;
-          case 'CHAN_MUTE_B': writeSingle(serializeRep(ch, 'CHAN_MUTE_B', s.muteB)); break;
-          case 'INPUT_GAIN_HI_A': writeSingle(serializeRep(ch, 'INPUT_GAIN_HI_A', s.gainA)); break;
+          case 'CHAN_NAME': writeSingle(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`)); break;
+          case 'AUDIO_MUTE': writeSingle(serializeRep(ch, 'AUDIO_MUTE', s.mute)); break;
+          case 'AUDIO_GAIN_HI_RES': writeSingle(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain))); break;
           case 'ALWAYS_ON_ENABLE_A': writeSingle(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', s.alwaysOn)); break;
           case 'INTELLIMIX_MODE': writeSingle(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix)); break;
           case 'INPUT_AUDIO_GATE_A': writeSingle(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate)); break;
-          case 'INPUT_TYPE': writeSingle(serializeRep(ch, 'INPUT_TYPE', s.inputType || 'ANALOG')); break;
+          case 'INPUT_AUDIO_SOURCE': writeSingle(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource)); break;
           default:
             debug('Unhandled GET param: %s', param);
         }
@@ -186,7 +198,14 @@ export function startMock(port) {
       sendInitialState(socket);
     });
 
+    let retries = 0;
     server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && retries < 6) {
+        retries++;
+        debug('Port %d busy — retry %d in 800ms...', port, retries);
+        setTimeout(() => server.listen(port), 800);
+        return;
+      }
       console.error('[mock] Server error:', err.message);
       reject(err);
     });

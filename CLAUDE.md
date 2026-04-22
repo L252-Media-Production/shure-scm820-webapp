@@ -46,6 +46,7 @@ The SCM820 communicates over **TCP on port 2202** using ASCII command strings. A
 < SET x CHAN_MUTE_A ON|OFF|TOGGLE >  → mute on mix A
 < SET x CHAN_MUTE_B ON|OFF|TOGGLE >  → mute on mix B
 < SET x INPUT_GAIN_HI_A nn >         → input gain (mix A)
+< GET x AUDIO_GAIN_HI_RES >          → audio gain
 < SET x ALWAYS_ON_ENABLE_A ON|OFF >  → force channel always open
 < SET x INTELLIMIX_MODE ... >        → set Intellimix mode
 < SET 0 METER_RATE sssss >           → start metering (ms interval); 0 = off

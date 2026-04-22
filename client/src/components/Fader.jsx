@@ -4,20 +4,34 @@ const TRACK_HEIGHT = 140;
 const CAP_HEIGHT = 16;
 const TRACK_TRAVEL = TRACK_HEIGHT - CAP_HEIGHT;
 
-// Piece-wise linear dB scale — position 0 = bottom, 1 = top
+// AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps
+// 1280 = 0 dB (unity/full level), lower = more attenuation
+const GAIN_UNITY = 1280;
+
+function rawToDb(raw) {
+  if (raw <= 0) return -Infinity;
+  return (raw - GAIN_UNITY) / 10;
+}
+
+function dbToRaw(db) {
+  if (!isFinite(db)) return 0;
+  return Math.max(0, Math.min(GAIN_UNITY, Math.round(db * 10 + GAIN_UNITY)));
+}
+
+// Piece-wise log scale: bottom = -∞, top = 0 dB (unity)
 const STOPS = [
   { pos: 0.00, db: -Infinity, label: '-∞' },
-  { pos: 0.07, db: -80,       label: '-80'     },
-  { pos: 0.16, db: -60,       label: '-60'     },
-  { pos: 0.28, db: -40,       label: '-40'     },
-  { pos: 0.45, db: -20,       label: '-20'     },
-  { pos: 0.67, db: 0,         label: '0'       },
-  { pos: 1.00, db: 18,        label: '+18'     },
+  { pos: 0.07, db: -80,       label: '-80' },
+  { pos: 0.20, db: -50,       label: '-50' },
+  { pos: 0.38, db: -30,       label: '-30' },
+  { pos: 0.55, db: -20,       label: '-20' },
+  { pos: 0.70, db: -10,       label: '-10' },
+  { pos: 0.83, db: -6,        label: '-6'  },
+  { pos: 1.00, db: 0,         label: '0'   },
 ];
 
-// Fader position (0–1) → dB value
 function posToDb(pos) {
-  if (pos < STOPS[1].pos) return -Infinity; // bottom zone
+  if (pos < STOPS[1].pos) return -Infinity;
   for (let i = 1; i < STOPS.length - 1; i++) {
     if (pos <= STOPS[i + 1].pos) {
       const a = STOPS[i], b = STOPS[i + 1];
@@ -28,7 +42,6 @@ function posToDb(pos) {
   return STOPS[STOPS.length - 1].db;
 }
 
-// dB value → fader position (0–1)
 function dbToPos(db) {
   if (!isFinite(db)) return STOPS[0].pos;
   if (db <= STOPS[1].db) return STOPS[1].pos;
@@ -42,26 +55,16 @@ function dbToPos(db) {
   return STOPS[STOPS.length - 1].pos;
 }
 
-// dB → SCM820 INPUT_GAIN_HI_A value (0–18, clamped)
-function dbToGain(db) {
-  if (!isFinite(db) || db < 0) return 0;
-  return Math.min(18, Math.max(0, Math.round(db)));
-}
-
-// The "0 dB" reference position for the fill/tick
-const ZERO_DB_POS = STOPS[5].pos;
-const ZERO_CAP_CENTER_PX = Math.round(ZERO_DB_POS * TRACK_TRAVEL + CAP_HEIGHT / 2);
-
+// value prop is raw 0-1280 device integer; onChange(rawInt) sends back to device
 export function Fader({ value, onChange }) {
-  const [localDb, setLocalDb] = useState(Number.isFinite(value) ? value : 0);
+  const [localDb, setLocalDb] = useState(rawToDb(value ?? GAIN_UNITY));
   const containerRef = useRef(null);
   const isDragging = useRef(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // Sync fader position from device value when not dragging
   useEffect(() => {
-    if (!isDragging.current) setLocalDb(Number.isFinite(value) ? value : 0);
+    if (!isDragging.current) setLocalDb(rawToDb(value ?? GAIN_UNITY));
   }, [value]);
 
   function computeDb(clientY) {
@@ -77,14 +80,14 @@ export function Fader({ value, onChange }) {
     e.currentTarget.setPointerCapture(e.pointerId);
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    onChangeRef.current(dbToGain(db));
+    onChangeRef.current(dbToRaw(db));
   }
 
   function handlePointerMove(e) {
     if (!isDragging.current) return;
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    onChangeRef.current(dbToGain(db));
+    onChangeRef.current(dbToRaw(db));
   }
 
   function handlePointerUp() {
@@ -93,8 +96,10 @@ export function Fader({ value, onChange }) {
 
   const capPos = dbToPos(localDb);
   const capBottomPx = Math.round(capPos * TRACK_TRAVEL);
-  const fillHeight = Math.max(0, capBottomPx + CAP_HEIGHT / 2 - ZERO_CAP_CENTER_PX);
-  const displayLabel = !isFinite(localDb) ? '-∞' : `${localDb >= 0 ? '+' : ''}${Math.round(localDb)}`;
+
+  const displayLabel = !isFinite(localDb)
+    ? '-∞'
+    : `${Math.round(localDb)} dB`;
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -114,27 +119,13 @@ export function Fader({ value, onChange }) {
             style={{ width: '6px', top: 0, bottom: 0, left: '50%', transform: 'translateX(-50%)' }}
           />
 
-          {/* Active gain fill (0 dB → cap) */}
-          {fillHeight > 0 && (
-            <div
-              className="absolute bg-blue-800/80 rounded-sm"
-              style={{
-                width: '6px',
-                bottom: `${ZERO_CAP_CENTER_PX}px`,
-                height: `${fillHeight}px`,
-                left: '50%',
-                transform: 'translateX(-50%)',
-              }}
-            />
-          )}
-
-          {/* 0 dB reference tick */}
+          {/* 0 dB reference tick at top */}
           <div
-            className="absolute bg-zinc-500"
+            className="absolute bg-blue-500"
             style={{
               width: '12px',
               height: '1px',
-              bottom: `${ZERO_CAP_CENTER_PX}px`,
+              bottom: `${Math.round(STOPS[STOPS.length - 1].pos * TRACK_TRAVEL + CAP_HEIGHT / 2)}px`,
               left: '50%',
               transform: 'translateX(-50%)',
             }}
@@ -179,7 +170,7 @@ export function Fader({ value, onChange }) {
       </div>
 
       {/* Current dB readout */}
-      <div className="text-[10px] text-zinc-400 font-mono">{displayLabel} dB</div>
+      <div className="text-[10px] text-zinc-400 font-mono">{displayLabel}</div>
     </div>
   );
 }

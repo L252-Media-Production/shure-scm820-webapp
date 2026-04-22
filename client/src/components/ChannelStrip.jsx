@@ -2,16 +2,17 @@ import { memo, useState } from 'react';
 import { VUMeter } from './VUMeter.jsx';
 import { Fader } from './Fader.jsx';
 
-const INTELLIMIX_MODES = ['CLASSIC', 'NOISE_ADAPTIVE', 'GATING', 'MANUAL'];
-const NAME_MAX_LEN = 12;
+// Per PDF: valid IntelliMix modes for the SCM820
+const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
+const NAME_MAX_LEN = 31;
 
 export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sendSet, meterLevelsRef }) {
-  const { name, muteA, muteB, gainA, alwaysOn, intellimixMode, gateOpen, inputType } = data;
+  const { name, mute, gain, alwaysOn, intellimixMode, gateOpen, inputSource } = data;
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
 
   const levelIndex = channelIndex - 1;
-  const isMuted = muteA || muteB;
+  const isAnalog = inputSource === 'Analog';
 
   function startEdit() {
     setDraftName(name || `CH ${channelIndex}`);
@@ -21,7 +22,8 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
   function commitEdit() {
     const trimmed = draftName.trim();
     if (trimmed && trimmed !== name) {
-      sendSet(channelIndex, 'CHAN_NAME', trimmed);
+      // Device expects {name} format — pad to 31 chars inside braces
+      sendSet(channelIndex, 'CHAN_NAME', `{${trimmed.padEnd(31)}}`);
     }
     setEditingName(false);
   }
@@ -29,6 +31,15 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
   function handleNameKeyDown(e) {
     if (e.key === 'Enter') commitEdit();
     if (e.key === 'Escape') setEditingName(false);
+  }
+
+  function handleMute() {
+    sendSet(channelIndex, 'AUDIO_MUTE', mute ? 'OFF' : 'ON');
+  }
+
+  function handleGainChange(rawValue) {
+    // rawValue is 0-1280; device expects 4-digit zero-padded string
+    sendSet(channelIndex, 'AUDIO_GAIN_HI_RES', String(rawValue).padStart(4, '0'));
   }
 
   return (
@@ -68,25 +79,22 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         </div>
       )}
 
-      {/* Gain fader with dB scale */}
+      {/* Gain fader */}
       <Fader
-        value={gainA}
-        onChange={(v) => sendSet(channelIndex, 'INPUT_GAIN_HI_A', v)}
+        value={gain}
+        onChange={handleGainChange}
       />
 
-      {/* Single mute button (mutes both mix A and mix B) */}
+      {/* Mute button */}
       <button
-        onClick={() => {
-          sendSet(channelIndex, 'CHAN_MUTE_A', 'TOGGLE');
-          sendSet(channelIndex, 'CHAN_MUTE_B', 'TOGGLE');
-        }}
+        onClick={handleMute}
         className={`w-full py-1.5 text-[10px] rounded font-bold tracking-wider transition-colors ${
-          isMuted
+          mute
             ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]'
             : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
         }`}
       >
-        {isMuted ? 'MUTED' : 'MUTE'}
+        {mute ? 'MUTED' : 'MUTE'}
       </button>
 
       {/* Always On */}
@@ -101,12 +109,12 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         ALWAYS ON
       </button>
 
-      {/* Input source: Analog / Dante */}
+      {/* Input source: Analog / Network */}
       <div className="flex w-full gap-1">
         <button
-          onClick={() => sendSet(channelIndex, 'INPUT_TYPE', 'ANALOG')}
+          onClick={() => sendSet(channelIndex, 'INPUT_AUDIO_SOURCE', 'Analog')}
           className={`flex-1 py-0.5 text-[9px] rounded font-bold transition-colors ${
-            inputType === 'ANALOG'
+            isAnalog
               ? 'bg-blue-700 text-white'
               : 'bg-zinc-700 text-zinc-500 hover:bg-zinc-600'
           }`}
@@ -114,14 +122,14 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
           ANA
         </button>
         <button
-          onClick={() => sendSet(channelIndex, 'INPUT_TYPE', 'DANTE')}
+          onClick={() => sendSet(channelIndex, 'INPUT_AUDIO_SOURCE', 'Network')}
           className={`flex-1 py-0.5 text-[9px] rounded font-bold transition-colors ${
-            inputType === 'DANTE'
+            !isAnalog
               ? 'bg-purple-700 text-white'
               : 'bg-zinc-700 text-zinc-500 hover:bg-zinc-600'
           }`}
         >
-          DAN
+          NET
         </button>
       </div>
 

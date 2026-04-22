@@ -28,19 +28,19 @@ let bridgeConnected = false;
 function requestInitialState() {
   for (const ch of INPUT_CHANNELS) {
     bridge.sendGet(ch, 'CHAN_NAME');
-    bridge.sendGet(ch, 'CHAN_MUTE_A');
-    bridge.sendGet(ch, 'CHAN_MUTE_B');
-    bridge.sendGet(ch, 'INPUT_GAIN_HI_A');
+    bridge.sendGet(ch, 'AUDIO_MUTE');
+    bridge.sendGet(ch, 'AUDIO_GAIN_HI_RES');
     bridge.sendGet(ch, 'ALWAYS_ON_ENABLE_A');
     bridge.sendGet(ch, 'INTELLIMIX_MODE');
     bridge.sendGet(ch, 'INPUT_AUDIO_GATE_A');
-    bridge.sendGet(ch, 'INPUT_TYPE');
+    bridge.sendGet(ch, 'INPUT_AUDIO_SOURCE');
   }
   for (const ch of [18, 19]) {
     bridge.sendGet(ch, 'CHAN_NAME');
-    bridge.sendGet(ch, 'CHAN_MUTE_A');
-    bridge.sendGet(ch, 'CHAN_MUTE_B');
+    bridge.sendGet(ch, 'AUDIO_MUTE');
+    bridge.sendGet(ch, 'AUDIO_GAIN_HI_RES');
   }
+  bridge.sendGet(null, 'DEVICE_ID');
 }
 
 if (USE_MOCK) {

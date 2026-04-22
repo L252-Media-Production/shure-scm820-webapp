@@ -25,9 +25,9 @@ function StatusPopover({ deviceInfo, connected, onHostChange, onClose }) {
           <span className="text-zinc-500">Device IP</span>
           <span className="text-zinc-200">{deviceInfo.host || '—'}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">MAC</span>
-          <span className="text-zinc-200">{deviceInfo.mac || '—'}</span>
+        <div className="flex justify-between gap-2">
+          <span className="text-zinc-500 shrink-0">Device ID</span>
+          <span className="text-zinc-200 text-right truncate">{deviceInfo.deviceId || '—'}</span>
         </div>
       </div>
 

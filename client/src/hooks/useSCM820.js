@@ -73,7 +73,11 @@ export function useSCM820() {
             setDeviceInfo({ host: msg.host, mac: msg.mac });
             break;
           case 'REP':
-            applyRep(msg);
+            if (msg.param === 'DEVICE_ID') {
+              setDeviceInfo({ deviceId: msg.value.replace(/^\{|\}$/g, '').trim() });
+            } else if (msg.channel !== 0) {
+              applyRep(msg);
+            }
             break;
           case 'SAMPLE':
             meterLevelsRef.current = msg.levels;
