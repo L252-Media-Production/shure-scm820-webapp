@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: #18181b;
+  color: #f4f4f5;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: #60a5fa;
+  margin-top: -5px;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #3f3f46;
+  border-radius: 2px;
+}

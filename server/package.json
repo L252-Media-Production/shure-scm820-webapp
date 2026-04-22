@@ -1,0 +1,21 @@
+{
+  "name": "scm820-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "mock": "cross-env USE_MOCK=true nodemon index.js"
+  },
+  "dependencies": {
+    "debug": "^4.3.6",
+    "dotenv": "^16.4.5",
+    "scm820-webapp": "file:..",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.4"
+  }
+}

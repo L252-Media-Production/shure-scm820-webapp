@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(USE_MOCK=true timeout 5 node index.js)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm run *)",
+      "Bash(USE_MOCK=true timeout 4 node index.js)"
+    ]
+  }
+}
