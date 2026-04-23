@@ -52,7 +52,7 @@ export function OutputTab({ sendSet, meterLevelsRef }) {
 
       {/* Set-all source bar */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-zinc-400 font-mono font-bold whitespace-nowrap">All DO Source</span>
+        <span className="text-[10px] text-zinc-400 font-mono font-bold whitespace-nowrap">Set Direct Out Source</span>
         <select
           value={commonSource}
           onChange={(e) => setAllSources(e.target.value)}
