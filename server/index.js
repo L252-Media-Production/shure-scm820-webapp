@@ -1,11 +1,29 @@
 import 'dotenv/config';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { platform } from 'os';
 import { WebSocketServer } from 'ws';
 import debugLib from 'debug';
 import { createBridge } from './bridge.js';
 import { startMock } from './mock.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const STATIC_DIR = path.resolve(__dirname, '../client/dist');
+
+const MIME_TYPES = {
+  '.html': 'text/html',
+  '.js':   'application/javascript',
+  '.css':  'text/css',
+  '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+  '.ico':  'image/x-icon',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+  '.woff':  'font/woff',
+};
 
 const debug = debugLib('scm820:server');
 
@@ -181,8 +199,26 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
-  res.writeHead(404);
-  res.end();
+  // Serve static files from client/dist
+  const urlPath = req.url.split('?')[0];
+  let filePath = path.join(STATIC_DIR, urlPath === '/' ? 'index.html' : urlPath);
+  const ext = path.extname(filePath);
+
+  // SPA fallback: unknown paths without an extension → index.html
+  if (!ext || !fs.existsSync(filePath)) {
+    filePath = path.join(STATIC_DIR, 'index.html');
+  }
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+    const mime = MIME_TYPES[path.extname(filePath)] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': mime });
+    res.end(data);
+  });
 }
 
 wss.on('connection', (ws) => {

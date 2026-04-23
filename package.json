@@ -4,9 +4,13 @@
   "scripts": {
     "dev": "concurrently -n server,client -c blue,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "dev:mock": "concurrently -n server,client -c blue,cyan \"npm run mock --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "start:mock": "cross-env USE_MOCK=true npm run start --prefix server",
     "install:all": "npm install && npm install --prefix server && npm install --prefix client"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0"
   }
 }
