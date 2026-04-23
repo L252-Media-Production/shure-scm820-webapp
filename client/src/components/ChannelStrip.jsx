@@ -28,7 +28,6 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
   function commitEdit() {
     const trimmed = draftName.trim();
     if (trimmed && trimmed !== name) {
-      // Device expects {name} format — pad to 31 chars inside braces
       sendSet(channelIndex, 'CHAN_NAME', `{${trimmed.padEnd(31)}}`);
     }
     setEditingName(false);
@@ -44,12 +43,11 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
   }
 
   function handleGainChange(rawValue) {
-    // rawValue is 0-1280; device expects 4-digit zero-padded string
     sendSet(channelIndex, 'AUDIO_GAIN_HI_RES', String(rawValue).padStart(4, '0'));
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 p-3 bg-zinc-800 rounded-xl w-[96px] border border-zinc-700 shadow-lg">
+    <div className="flex flex-col items-center gap-2 px-2 py-3 bg-zinc-800 rounded-xl w-[104px] border border-zinc-700 shadow-lg">
 
       {/* Gate LED */}
       <div className="flex items-center gap-1.5">
@@ -60,9 +58,6 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         />
         <span className="text-[10px] text-zinc-500 uppercase tracking-wide">gate</span>
       </div>
-
-      {/* VU Meter */}
-      <VUMeter levelIndex={levelIndex} meterLevelsRef={meterLevelsRef} />
 
       {/* Channel name — click to edit */}
       {editingName ? (
@@ -85,11 +80,11 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         </div>
       )}
 
-      {/* Gain fader */}
-      <Fader
-        value={gain}
-        onChange={handleGainChange}
-      />
+      {/* Fader + VU Meter side by side */}
+      <div className="flex items-start gap-1">
+        <Fader value={gain} onChange={handleGainChange} />
+        <VUMeter levelIndex={levelIndex} meterLevelsRef={meterLevelsRef} height={140} />
+      </div>
 
       {/* Mute button */}
       <button

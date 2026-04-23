@@ -52,8 +52,11 @@ export function startMock(port) {
       channels[ch] = { ...makeChannelState(), name: DEFAULT_NAMES[ch - 1] };
     }
     channels[AUX_CHANNEL] = { ...makeChannelState(), name: 'Aux' };
-    channels[18] = { ...makeChannelState(), name: 'Output A' };
-    channels[19] = { ...makeChannelState(), name: 'Output B' };
+    for (let ch = 10; ch <= 17; ch++) {
+      channels[ch] = { directOutSource: 'POST_FADER' };
+    }
+    channels[18] = { ...makeChannelState(), name: 'Output A', audioOutLvlSwitch: 'LINE_LVL' };
+    channels[19] = { ...makeChannelState(), name: 'Output B', audioOutLvlSwitch: 'LINE_LVL' };
 
     // Mutable global device settings
     const deviceSettings = {
@@ -105,12 +108,16 @@ export function startMock(port) {
         sock.write(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens) + '\r\n');
       }
+      for (let ch = 10; ch <= 17; ch++) {
+        sock.write(serializeRep(ch, 'DIRECT_OUT_SOURCE', channels[ch].directOutSource) + '\r\n');
+      }
       for (const ch of [18, 19]) {
         const s = channels[ch];
         if (!s) continue;
         sock.write(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_MUTE', s.mute) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain)) + '\r\n');
+        sock.write(serializeRep(ch, 'AUDIO_OUT_LVL_SWITCH', s.audioOutLvlSwitch) + '\r\n');
       }
       // Global static device info
       for (const [param, value] of Object.entries(GLOBAL_STATIC)) {
@@ -243,6 +250,14 @@ export function startMock(port) {
             s.micSens = value;
             broadcast(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens));
             break;
+          case 'DIRECT_OUT_SOURCE':
+            s.directOutSource = value;
+            broadcast(serializeRep(ch, 'DIRECT_OUT_SOURCE', value));
+            break;
+          case 'AUDIO_OUT_LVL_SWITCH':
+            s.audioOutLvlSwitch = value;
+            broadcast(serializeRep(ch, 'AUDIO_OUT_LVL_SWITCH', value));
+            break;
           default:
             debug('Unhandled SET param: %s', param);
         }
@@ -271,6 +286,8 @@ export function startMock(port) {
           case 'INPUT_AUDIO_SOURCE': writeSingle(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource)); break;
           case 'PHANTOM_PWR_ENABLE': writeSingle(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower)); break;
           case 'AUDIO_IN_LVL_SWITCH': writeSingle(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens)); break;
+          case 'DIRECT_OUT_SOURCE': writeSingle(serializeRep(ch, 'DIRECT_OUT_SOURCE', s.directOutSource ?? 'POST_FADER')); break;
+          case 'AUDIO_OUT_LVL_SWITCH': writeSingle(serializeRep(ch, 'AUDIO_OUT_LVL_SWITCH', s.audioOutLvlSwitch ?? 'LINE_LVL')); break;
           default:
             debug('Unhandled GET param: %s', param);
         }

@@ -37,10 +37,14 @@ function requestInitialState() {
     bridge.sendGet(ch, 'PHANTOM_PWR_ENABLE');
     bridge.sendGet(ch, 'AUDIO_IN_LVL_SWITCH');
   }
+  for (let ch = 10; ch <= 17; ch++) {
+    bridge.sendGet(ch, 'DIRECT_OUT_SOURCE');
+  }
   for (const ch of [18, 19]) {
     bridge.sendGet(ch, 'CHAN_NAME');
     bridge.sendGet(ch, 'AUDIO_MUTE');
     bridge.sendGet(ch, 'AUDIO_GAIN_HI_RES');
+    bridge.sendGet(ch, 'AUDIO_OUT_LVL_SWITCH');
   }
   for (const p of [
     'DEVICE_ID', 'SERIAL_NUM', 'FW_VER',

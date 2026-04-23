@@ -25,13 +25,13 @@ function drawMeter(canvas, level) {
   }
 }
 
-export function VUMeter({ levelIndex, meterLevelsRef }) {
+export function VUMeter({ levelIndex, meterLevelsRef, height = 120 }) {
   const canvasRef = useMetering(levelIndex, meterLevelsRef, drawMeter);
   return (
     <canvas
       ref={canvasRef}
       width={16}
-      height={120}
+      height={height}
       className="rounded-sm"
       aria-label="level meter"
     />

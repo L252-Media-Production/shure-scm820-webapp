@@ -2,7 +2,8 @@ import { create } from 'zustand';
 
 const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
 const AUX_CHANNEL = 9;
-const OUTPUT_CHANNELS = [18, 19];
+const DIRECT_OUT_CHANNELS = [10, 11, 12, 13, 14, 15, 16, 17];
+const MIX_OUT_CHANNELS = [18, 19];
 
 // AUDIO_GAIN_HI_RES: raw 1100 = 0 dB (unity), raw 1280 = +18 dB, raw 0 = -∞
 const GAIN_0DB = 1100;
@@ -19,6 +20,14 @@ function defaultChannel() {
     phantomPower: false,
     micSens: 'LINE_LVL',
   };
+}
+
+function defaultDirectOutChannel() {
+  return { directOutSource: 'POST_FADER' };
+}
+
+function defaultMixOutChannel() {
+  return { ...defaultChannel(), audioOutLvlSwitch: 'LINE_LVL' };
 }
 
 const DEVICE_PARAM_MAP = {
@@ -44,11 +53,18 @@ const DEVICE_PARAM_MAP = {
   REAR_PANEL_LOCK:                'rearPanelLock',
 };
 
+function buildChannels() {
+  const ch = {};
+  for (const n of INPUT_CHANNELS) ch[n] = defaultChannel();
+  ch[AUX_CHANNEL] = defaultChannel();
+  for (const n of DIRECT_OUT_CHANNELS) ch[n] = defaultDirectOutChannel();
+  for (const n of MIX_OUT_CHANNELS) ch[n] = defaultMixOutChannel();
+  return ch;
+}
+
 export const useMixerStore = create((set) => ({
   connected: false,
-  channels: Object.fromEntries(
-    [...INPUT_CHANNELS, AUX_CHANNEL, ...OUTPUT_CHANNELS].map((ch) => [ch, defaultChannel()])
-  ),
+  channels: buildChannels(),
 
   deviceInfo: {
     host: '',
@@ -95,7 +111,6 @@ export const useMixerStore = create((set) => ({
       const updated = { ...ch };
       switch (param) {
         case 'CHAN_NAME':
-          // Device sends {Name                           } — strip braces and trim
           updated.name = value.replace(/^\{|\}$/g, '').trim();
           break;
         case 'AUDIO_MUTE':
@@ -114,7 +129,6 @@ export const useMixerStore = create((set) => ({
           updated.gateOpen = value === 'ON';
           break;
         case 'INPUT_AUDIO_SOURCE':
-          // Normalize regardless of case the device sends (Analog/ANALOG/analog all → 'Analog')
           updated.inputSource = /^network|^dante/i.test(value) ? 'Network' : 'Analog';
           break;
         case 'PHANTOM_PWR_ENABLE':
@@ -122,6 +136,12 @@ export const useMixerStore = create((set) => ({
           break;
         case 'AUDIO_IN_LVL_SWITCH':
           updated.micSens = value;
+          break;
+        case 'DIRECT_OUT_SOURCE':
+          updated.directOutSource = value;
+          break;
+        case 'AUDIO_OUT_LVL_SWITCH':
+          updated.audioOutLvlSwitch = value;
           break;
         default:
           return {};
