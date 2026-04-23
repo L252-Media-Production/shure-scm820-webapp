@@ -64,18 +64,15 @@ function requestInitialState(bridge) {
     get(ch, 'AUDIO_MUTE');
     get(ch, 'AUDIO_GAIN_HI_RES');
     get(ch, 'ALWAYS_ON_ENABLE_A');
-    get(ch, 'INTELLIMIX_MODE');
     get(ch, 'INPUT_AUDIO_GATE_A');
     get(ch, 'INPUT_AUDIO_SOURCE');
     get(ch, 'PHANTOM_PWR_ENABLE');
     get(ch, 'AUDIO_IN_LVL_SWITCH');
   }
-  // Aux channel — no phantom power or level switch
+  // Aux channel — no always-on, phantom power, level switch
   get(AUX_CHANNEL, 'CHAN_NAME');
   get(AUX_CHANNEL, 'AUDIO_MUTE');
   get(AUX_CHANNEL, 'AUDIO_GAIN_HI_RES');
-  get(AUX_CHANNEL, 'ALWAYS_ON_ENABLE_A');
-  get(AUX_CHANNEL, 'INTELLIMIX_MODE');
   get(AUX_CHANNEL, 'INPUT_AUDIO_GATE_A');
   get(AUX_CHANNEL, 'INPUT_AUDIO_SOURCE');
   for (let ch = 10; ch <= 17; ch++) get(ch, 'DIRECT_OUT_SOURCE');

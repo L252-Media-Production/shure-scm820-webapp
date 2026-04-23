@@ -2,8 +2,6 @@ import { memo, useState } from 'react';
 import { VUMeter } from './VUMeter.jsx';
 import { Fader } from './Fader.jsx';
 
-// Per PDF: valid IntelliMix modes for the SCM820
-const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
 const NAME_MAX_LEN = 31;
 
 const AUDIO_IN_LVL_SWITCH_OPTIONS = [
@@ -13,7 +11,7 @@ const AUDIO_IN_LVL_SWITCH_OPTIONS = [
 ];
 
 export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sendSet, meterLevelsRef, isAux = false }) {
-  const { name, mute, gain, alwaysOn, intellimixMode, gateOpen, inputSource, phantomPower, micSens } = data;
+  const { name, mute, gain, alwaysOn, gateOpen, inputSource, phantomPower, micSens } = data;
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
 
@@ -98,17 +96,19 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         {mute ? 'MUTED' : 'MUTE'}
       </button>
 
-      {/* Always On */}
-      <button
-        onClick={() => sendSet(channelIndex, 'ALWAYS_ON_ENABLE_A', alwaysOn ? 'OFF' : 'ON')}
-        className={`w-full py-1 text-[10px] rounded tracking-wide transition-colors ${
-          alwaysOn
-            ? 'bg-amber-500 text-zinc-900 font-bold'
-            : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
-        }`}
-      >
-        ALWAYS ON
-      </button>
+      {/* Always On — aux channel does not support this */}
+      {!isAux && (
+        <button
+          onClick={() => sendSet(channelIndex, 'ALWAYS_ON_ENABLE_A', alwaysOn ? 'OFF' : 'ON')}
+          className={`w-full py-1 text-[10px] rounded tracking-wide transition-colors ${
+            alwaysOn
+              ? 'bg-amber-500 text-zinc-900 font-bold'
+              : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+          }`}
+        >
+          ALWAYS ON
+        </button>
+      )}
 
       {/* Input source: Analog / Network */}
       <div className="flex w-full gap-1">
@@ -167,17 +167,6 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
           +48V
         </button>
       )}
-
-      {/* Intellimix mode */}
-      <select
-        value={intellimixMode}
-        onChange={(e) => sendSet(channelIndex, 'INTELLIMIX_MODE', e.target.value)}
-        className="w-full text-[10px] bg-zinc-700 text-zinc-300 rounded p-1 border border-zinc-600 cursor-pointer"
-      >
-        {INTELLIMIX_MODES.map((m) => (
-          <option key={m} value={m}>{m}</option>
-        ))}
-      </select>
 
       {/* Channel number badge */}
       <div className="text-[10px] text-zinc-600 font-mono">{String(channelIndex).padStart(2, '0')}</div>
