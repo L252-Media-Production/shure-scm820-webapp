@@ -130,8 +130,8 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
           <div className="py-0.5">
             <div className="text-zinc-500 mb-1">LEDs</div>
             <div className="flex gap-1">
-              <SegBtn active={deviceInfo.disableLeds === 'ON'}  onClick={() => sendSet(null, 'DISABLE_LEDS', 'ON')}>ON</SegBtn>
-              <SegBtn active={deviceInfo.disableLeds === 'OFF'} onClick={() => sendSet(null, 'DISABLE_LEDS', 'OFF')}>OFF</SegBtn>
+              <SegBtn active={deviceInfo.disableLeds === 'OFF'} onClick={() => sendSet(null, 'DISABLE_LEDS', 'OFF')}>ON</SegBtn>
+              <SegBtn active={deviceInfo.disableLeds === 'ON'}  onClick={() => sendSet(null, 'DISABLE_LEDS', 'ON')}>OFF</SegBtn>
             </div>
           </div>
 

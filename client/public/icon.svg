@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="96" fill="#18181b"/>
+  <!-- 8 vertical fader tracks -->
+  <rect x="48"  y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="112" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="176" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="240" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="304" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="368" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <rect x="432" y="80" width="12" height="352" rx="6" fill="#3f3f46"/>
+  <!-- fader knobs at varying positions -->
+  <rect x="36"  y="180" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="100" y="220" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="164" y="160" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="228" y="240" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="292" y="200" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="356" y="260" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <rect x="420" y="190" width="36" height="20" rx="4" fill="#14b8a6"/>
+  <!-- gate LEDs -->
+  <circle cx="54"  cy="460" r="10" fill="#4ade80"/>
+  <circle cx="118" cy="460" r="10" fill="#3f3f46"/>
+  <circle cx="182" cy="460" r="10" fill="#4ade80"/>
+  <circle cx="246" cy="460" r="10" fill="#4ade80"/>
+  <circle cx="310" cy="460" r="10" fill="#3f3f46"/>
+  <circle cx="374" cy="460" r="10" fill="#4ade80"/>
+  <circle cx="438" cy="460" r="10" fill="#3f3f46"/>
+</svg>
