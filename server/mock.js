@@ -4,11 +4,11 @@ import { parse, serializeRep, serializeSample } from './parser.js';
 
 const debug = debugLib('scm820:mock');
 
-const INPUT_CHANNEL_COUNT = 8;
+const INPUT_CHANNEL_COUNT = 9;
 const AUX_CHANNEL = 9;
 const SAMPLE_LEVEL_COUNT = 19;
 
-const DEFAULT_NAMES = ['Podium', 'Panel L', 'Panel R', 'Table 1', 'Table 2', 'Table 3', 'Floor', 'Aux'];
+const DEFAULT_NAMES = ['Podium', 'Panel L', 'Panel R', 'Table 1', 'Table 2', 'Table 3', 'Floor', 'Chan 8', 'Aux'];
 const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM', 'MANUAL', 'CUSTOM_PRESET'];
 
 // AUDIO_GAIN_HI_RES: 0000-1280 in 0.1 dB steps; 1100 = 0 dB (unity), 1280 = +18 dB
@@ -51,7 +51,6 @@ export function startMock(port) {
     for (let ch = 1; ch <= INPUT_CHANNEL_COUNT; ch++) {
       channels[ch] = { ...makeChannelState(), name: DEFAULT_NAMES[ch - 1] };
     }
-    channels[AUX_CHANNEL] = { ...makeChannelState(), name: 'Aux' };
     for (let ch = 10; ch <= 17; ch++) {
       channels[ch] = { directOutSource: 'POST_FADER' };
     }

@@ -5,6 +5,7 @@ import { OutputTab } from './OutputTab.jsx';
 import { useMixerStore } from '../state/mixerStore.js';
 
 const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
+const AUX_CHANNEL = 9;
 
 const TABS = [
   { id: 'inputs', label: 'Inputs' },
@@ -46,6 +47,13 @@ export function MixerLayout({ sendSet, meterLevelsRef }) {
               meterLevelsRef={meterLevelsRef}
             />
           ))}
+          <ChannelStrip
+            key={AUX_CHANNEL}
+            channelIndex={AUX_CHANNEL}
+            data={channels[AUX_CHANNEL]}
+            sendSet={sendSet}
+            meterLevelsRef={meterLevelsRef}
+          />
           <div className="self-center h-48 w-px bg-zinc-600 mx-1" />
           <MasterSection sendSet={sendSet} meterLevelsRef={meterLevelsRef} />
         </div>

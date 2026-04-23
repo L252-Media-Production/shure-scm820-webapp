@@ -84,12 +84,12 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
           <InfoRow label="Protocol" value={deviceInfo.networkAudioProtocol} />
           <InfoRow label="Version"  value={deviceInfo.networkAudioVer} />
 
-          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Primary Interface</div>
+          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Dante Primary Interface</div>
           <InfoRow label="IP"      value={deviceInfo.ipAddrPrimary} />
           <InfoRow label="Subnet"  value={deviceInfo.ipSubnetPrimary} />
           <InfoRow label="Gateway" value={deviceInfo.ipGatewayPrimary} />
 
-          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Secondary Interface</div>
+          <div className="text-[10px] text-zinc-700 mt-1 mb-0.5 pl-1">Dante Secondary Interface</div>
           <InfoRow label="IP"      value={deviceInfo.ipAddrSecondary} />
           <InfoRow label="Subnet"  value={deviceInfo.ipSubnetSecondary} />
           <InfoRow label="Gateway" value={deviceInfo.ipGatewaySecondary} />
@@ -183,7 +183,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 }
 
 export default function App() {
-  const { sendSet, meterLevelsRef, updateDeviceHost } = useSCM820();
+  const { sendSet, meterLevelsRef, updateDeviceHost, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
 
@@ -264,6 +264,20 @@ export default function App() {
       )}
 
       {connected && <MixerLayout sendSet={sendSet} meterLevelsRef={meterLevelsRef} />}
+
+      {/* Loading overlay — shown while initial state is being synced from device */}
+      {connected && loadingProgress !== null && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="text-zinc-300 text-sm font-mono tracking-wide">Syncing device state…</div>
+          <div className="w-64 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-teal-500 rounded-full transition-all duration-100 ease-out"
+              style={{ width: `${loadingProgress}%` }}
+            />
+          </div>
+          <div className="text-zinc-500 text-xs font-mono">{loadingProgress}%</div>
+        </div>
+      )}
 
       {showModal && (
         <ConnectionModal

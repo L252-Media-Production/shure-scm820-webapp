@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useMixerStore } from '../state/mixerStore.js';
 
 const WS_URL =
@@ -11,10 +11,15 @@ const RECONNECT_DELAY_MS = 3000;
 export function useSCM820() {
   const wsRef = useRef(null);
   const meterLevelsRef = useRef([]);
+  // pending: Set of "channel:param" keys still awaiting a REP
+  const loadingRef = useRef({ pending: new Set(), total: 0, active: false });
+
   const setConnected = useMixerStore((s) => s.setConnected);
   const applyRep = useMixerStore((s) => s.applyRep);
   const applyDeviceParam = useMixerStore((s) => s.applyDeviceParam);
   const setDeviceInfo = useMixerStore((s) => s.setDeviceInfo);
+
+  const [loadingProgress, setLoadingProgress] = useState(null);
 
   const sendSet = useCallback((channel, param, value) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -45,10 +50,16 @@ export function useSCM820() {
       ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        loadingRef.current = { pending: new Set(), total: 0, active: true };
+        setLoadingProgress(0);
+      };
 
       ws.onclose = () => {
         setConnected(false);
+        loadingRef.current = { pending: new Set(), total: 0, active: false };
+        setLoadingProgress(null);
         if (!cancelled) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
       };
 
@@ -63,6 +74,14 @@ export function useSCM820() {
         }
 
         switch (msg.type) {
+          case 'INIT_START': {
+            const lr = loadingRef.current;
+            lr.pending = new Set(msg.expected);
+            lr.total = msg.expected.length;
+            lr.active = true;
+            setLoadingProgress(0);
+            break;
+          }
           case 'CONNECTED':
             setConnected(true);
             if (msg.host !== undefined) setDeviceInfo({ host: msg.host, mac: msg.mac });
@@ -73,14 +92,26 @@ export function useSCM820() {
           case 'CONFIG':
             setDeviceInfo({ host: msg.host, mac: msg.mac });
             break;
-          case 'REP':
-            // Channel 0 = global device REP (no channel in protocol message)
+          case 'REP': {
+            const lr = loadingRef.current;
+            if (lr.active && lr.total > 0) {
+              const key = `${msg.channel}:${msg.param}`;
+              if (lr.pending.delete(key)) {
+                const received = lr.total - lr.pending.size;
+                setLoadingProgress(Math.round((received / lr.total) * 100));
+                if (lr.pending.size === 0) {
+                  lr.active = false;
+                  setTimeout(() => setLoadingProgress(null), 600);
+                }
+              }
+            }
             if (msg.channel === 0) {
               applyDeviceParam(msg.param, msg.value);
             } else {
               applyRep(msg);
             }
             break;
+          }
           case 'SAMPLE':
             meterLevelsRef.current = msg.levels;
             break;
@@ -97,5 +128,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
 
-  return { sendSet, meterLevelsRef, updateDeviceHost };
+  return { sendSet, meterLevelsRef, updateDeviceHost, loadingProgress };
 }
