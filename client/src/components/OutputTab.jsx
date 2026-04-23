@@ -29,11 +29,43 @@ const AUDIO_OUT_LVL_OPTIONS = [
   { value: 'MIC_LVL',  label: 'MIC' },
 ];
 
+const DIRECT_OUT_CHANNELS = DIRECT_OUTPUTS.map((d) => d.channel);
+
+function allSameSource(channels) {
+  const sources = DIRECT_OUT_CHANNELS.map((ch) => channels[ch]?.directOutSource).filter(Boolean);
+  if (sources.length === 0) return '';
+  return sources.every((s) => s === sources[0]) ? sources[0] : '';
+}
+
 export function OutputTab({ sendSet, meterLevelsRef }) {
   const channels = useMixerStore((s) => s.channels);
+  const commonSource = allSameSource(channels);
+
+  function setAllSources(value) {
+    for (const ch of DIRECT_OUT_CHANNELS) {
+      sendSet(ch, 'DIRECT_OUT_SOURCE', value);
+    }
+  }
 
   return (
-    <div className="flex flex-wrap items-start gap-3 p-4 overflow-x-auto">
+    <div className="flex flex-col gap-3 p-4 overflow-x-auto">
+
+      {/* Set-all source bar */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-zinc-400 font-mono font-bold whitespace-nowrap">All DO Source</span>
+        <select
+          value={commonSource}
+          onChange={(e) => setAllSources(e.target.value)}
+          className="text-[10px] bg-zinc-700 text-zinc-300 rounded p-0.5 border border-zinc-600 cursor-pointer"
+        >
+          <option value="" disabled>— mixed —</option>
+          {DIRECT_OUT_SOURCE_OPTIONS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-wrap items-start gap-3">
 
       {/* Direct Outputs — with source selector */}
       {DIRECT_OUTPUTS.map(({ channel, label, levelIndex }) => {
@@ -117,6 +149,7 @@ export function OutputTab({ sendSet, meterLevelsRef }) {
         );
       })}
 
+      </div>
     </div>
   );
 }
