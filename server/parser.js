@@ -1,5 +1,6 @@
 const REP_PATTERN = /^< REP (\d+) (\w+) (.+) >$/;
 const REP_GLOBAL_PATTERN = /^< REP ([A-Z][A-Z0-9_]*) (.+) >$/;
+const REP_ERR_PATTERN = /^< REP ERR >$/;
 const SAMPLE_PATTERN = /^< SAMPLE ((?:\d{3} ?)+)>$/;
 const GET_PATTERN = /^< GET (\d+) (\w+) >$/;
 const GET_GLOBAL_PATTERN = /^< GET ([A-Z][A-Z0-9_]+) >$/;
@@ -11,6 +12,7 @@ export function parse(raw) {
   let m;
   if ((m = REP_PATTERN.exec(s))) return { type: 'REP', channel: +m[1], param: m[2], value: m[3] };
   if ((m = SAMPLE_PATTERN.exec(s))) return { type: 'SAMPLE', levels: m[1].trim().split(/\s+/).map(Number) };
+  if (REP_ERR_PATTERN.test(s)) return { type: 'ERR' };
   // No-channel REP (e.g. < REP DEVICE_ID {...} >, < REP METER_RATE 01000 >)
   if ((m = REP_GLOBAL_PATTERN.exec(s))) return { type: 'REP', channel: 0, param: m[1], value: m[2] };
   if ((m = GET_PATTERN.exec(s))) return { type: 'GET', channel: +m[1], param: m[2] };

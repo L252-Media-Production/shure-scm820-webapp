@@ -38,7 +38,8 @@ export function createBridge(host, port) {
         if (
           !raw.startsWith('< SAMPLE') &&
           !raw.includes('AUDIO_OUT_PEAK_LVL') &&
-          !raw.includes('AUDIO_IN_PEAK_LVL')
+          !raw.includes('AUDIO_IN_PEAK_LVL') &&
+          !raw.includes('METER_RATE')
         ) console.log(`[← SCM820] ${raw}`);
         const msg = parse(raw);
         if (msg.type === 'UNKNOWN') {

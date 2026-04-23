@@ -53,6 +53,7 @@ export function MixerLayout({ sendSet, meterLevelsRef }) {
             data={channels[AUX_CHANNEL]}
             sendSet={sendSet}
             meterLevelsRef={meterLevelsRef}
+            isAux
           />
           <div className="self-center h-48 w-px bg-zinc-600 mx-1" />
           <MasterSection sendSet={sendSet} meterLevelsRef={meterLevelsRef} />

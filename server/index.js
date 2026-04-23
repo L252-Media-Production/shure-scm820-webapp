@@ -33,7 +33,8 @@ const SCM820_PORT = parseInt(process.env.SCM820_PORT, 10) || 2202;
 const USE_MOCK   = process.env.USE_MOCK === 'true';
 const METER_RATE_MS = 100;
 
-const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
+const AUX_CHANNEL = 9;
 
 const GLOBAL_PARAMS = [
   'DEVICE_ID', 'SERIAL_NUM', 'FW_VER',
@@ -69,6 +70,14 @@ function requestInitialState(bridge) {
     get(ch, 'PHANTOM_PWR_ENABLE');
     get(ch, 'AUDIO_IN_LVL_SWITCH');
   }
+  // Aux channel — no phantom power or level switch
+  get(AUX_CHANNEL, 'CHAN_NAME');
+  get(AUX_CHANNEL, 'AUDIO_MUTE');
+  get(AUX_CHANNEL, 'AUDIO_GAIN_HI_RES');
+  get(AUX_CHANNEL, 'ALWAYS_ON_ENABLE_A');
+  get(AUX_CHANNEL, 'INTELLIMIX_MODE');
+  get(AUX_CHANNEL, 'INPUT_AUDIO_GATE_A');
+  get(AUX_CHANNEL, 'INPUT_AUDIO_SOURCE');
   for (let ch = 10; ch <= 17; ch++) get(ch, 'DIRECT_OUT_SOURCE');
   for (const ch of [18, 19]) {
     get(ch, 'CHAN_NAME');
@@ -126,6 +135,10 @@ wss.on('connection', (ws) => {
 
   bridge.emitter.on('rep', (msg) => {
     sendToClient(ws, { type: 'REP', channel: msg.channel, param: msg.param, value: msg.value });
+  });
+
+  bridge.emitter.on('err', () => {
+    sendToClient(ws, { type: 'REP_ERR' });
   });
 
   bridge.emitter.on('sample', (msg) => {

@@ -12,7 +12,7 @@ const AUDIO_IN_LVL_SWITCH_OPTIONS = [
   { value: 'MIC_LVL_46DB', label: '+46', title: 'Mic (+46 dB)' },
 ];
 
-export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sendSet, meterLevelsRef }) {
+export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sendSet, meterLevelsRef, isAux = false }) {
   const { name, mute, gain, alwaysOn, intellimixMode, gateOpen, inputSource, phantomPower, micSens } = data;
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -134,8 +134,8 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         </button>
       </div>
 
-      {/* Analog-only: Mic sensitivity selector */}
-      {isAnalog && (
+      {/* Analog-only, non-aux: Mic sensitivity selector */}
+      {isAnalog && !isAux && (
         <div className="flex w-full gap-0.5">
           {AUDIO_IN_LVL_SWITCH_OPTIONS.map(({ value, label, title }) => (
             <button
@@ -154,8 +154,8 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
         </div>
       )}
 
-      {/* Analog-only: 48V Phantom Power */}
-      {isAnalog && (
+      {/* Analog-only, non-aux: 48V Phantom Power */}
+      {isAnalog && !isAux && (
         <button
           onClick={() => sendSet(channelIndex, 'PHANTOM_PWR_ENABLE', phantomPower ? 'OFF' : 'ON')}
           className={`w-full py-0.5 text-[9px] rounded font-bold tracking-wider transition-colors ${

@@ -9,8 +9,6 @@ const DIRECT_OUTPUTS = Array.from({ length: 8 }, (_, i) => ({
   levelIndex: 9 + i,
 }));
 
-// Aux channel direct-out meter (level index 8 in SAMPLE frame, no configurable source)
-const AUX_DIRECT_OUT = { label: 'AUX', levelIndex: 8 };
 
 const MIX_OUTPUTS = [
   { channel: 18, label: 'Mix A', levelIndex: 17 },
@@ -59,12 +57,6 @@ export function OutputTab({ sendSet, meterLevelsRef }) {
           </div>
         );
       })}
-
-      {/* Aux direct-out level meter (no configurable source) */}
-      <div className="flex flex-col items-center gap-1.5 p-2 bg-zinc-800 rounded-lg border border-zinc-700 shadow w-[72px]">
-        <div className="text-[10px] text-zinc-400 font-mono font-bold">{AUX_DIRECT_OUT.label}</div>
-        <VUMeter levelIndex={AUX_DIRECT_OUT.levelIndex} meterLevelsRef={meterLevelsRef} />
-      </div>
 
       {/* Divider between direct and mix outputs */}
       <div className="self-stretch w-px bg-zinc-700 mx-1" />
