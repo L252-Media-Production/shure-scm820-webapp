@@ -1,0 +1,12 @@
+services:
+  scm820:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SCM820_HOST: ${SCM820_HOST:-192.168.1.100}
+      SCM820_PORT: ${SCM820_PORT:-2202}
+      WS_PORT: 8080
+      WS_HOST: 0.0.0.0
+      USE_MOCK: ${USE_MOCK:-false}
+    restart: unless-stopped
