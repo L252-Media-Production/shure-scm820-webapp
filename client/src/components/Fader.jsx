@@ -60,6 +60,7 @@ const GAIN_0DB = 1100; // raw value for 0 dB (unity)
 // value prop is raw 0-1280 device integer; onChange(rawInt) sends back to device
 export function Fader({ value, onChange }) {
   const [localDb, setLocalDb] = useState(rawToDb(value ?? GAIN_0DB));
+  const [fine, setFine] = useState(false);
   const containerRef = useRef(null);
   const isDragging = useRef(false);
   const pendingDbRef = useRef(null);
@@ -83,18 +84,26 @@ export function Fader({ value, onChange }) {
     e.currentTarget.setPointerCapture(e.pointerId);
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    pendingDbRef.current = db;
+    if (fine) {
+      onChangeRef.current(dbToRaw(db));
+    } else {
+      pendingDbRef.current = db;
+    }
   }
 
   function handlePointerMove(e) {
     if (!isDragging.current) return;
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    pendingDbRef.current = db;
+    if (fine) {
+      onChangeRef.current(dbToRaw(db));
+    } else {
+      pendingDbRef.current = db;
+    }
   }
 
   function handlePointerUp() {
-    if (isDragging.current && pendingDbRef.current !== null) {
+    if (!fine && isDragging.current && pendingDbRef.current !== null) {
       onChangeRef.current(dbToRaw(pendingDbRef.current));
     }
     isDragging.current = false;
@@ -178,6 +187,19 @@ export function Fader({ value, onChange }) {
 
       {/* Current dB readout */}
       <div className="text-[10px] text-zinc-400 font-mono">{displayLabel}</div>
+
+      {/* Fine / Coarse toggle */}
+      <button
+        onClick={() => setFine((v) => !v)}
+        title={fine ? 'Fine mode — every movement sends to device' : 'Coarse mode — sends on release'}
+        className={`w-full py-0.5 text-[9px] rounded font-bold tracking-wider transition-colors ${
+          fine
+            ? 'bg-red-700 text-red-200'
+            : 'bg-zinc-700 text-zinc-500 hover:bg-zinc-600'
+        }`}
+      >
+        {fine ? 'FINE' : 'CRSE'}
+      </button>
     </div>
   );
 }
