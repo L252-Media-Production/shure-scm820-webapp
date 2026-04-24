@@ -14,15 +14,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.resolve(__dirname, '../client/dist');
 
 const MIME_TYPES = {
-  '.html':  'text/html',
-  '.js':    'application/javascript',
-  '.css':   'text/css',
-  '.svg':   'image/svg+xml',
-  '.png':   'image/png',
-  '.ico':   'image/x-icon',
-  '.json':  'application/json',
-  '.woff2': 'font/woff2',
-  '.woff':  'font/woff',
+  '.html':        'text/html',
+  '.js':          'application/javascript',
+  '.css':         'text/css',
+  '.svg':         'image/svg+xml',
+  '.png':         'image/png',
+  '.ico':         'image/x-icon',
+  '.json':        'application/json',
+  '.webmanifest': 'application/manifest+json',
+  '.woff2':       'font/woff2',
+  '.woff':        'font/woff',
 };
 
 const debug = debugLib('scm820:server');

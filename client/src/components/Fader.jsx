@@ -62,6 +62,7 @@ export function Fader({ value, onChange }) {
   const [localDb, setLocalDb] = useState(rawToDb(value ?? GAIN_0DB));
   const containerRef = useRef(null);
   const isDragging = useRef(false);
+  const pendingDbRef = useRef(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -82,18 +83,22 @@ export function Fader({ value, onChange }) {
     e.currentTarget.setPointerCapture(e.pointerId);
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    onChangeRef.current(dbToRaw(db));
+    pendingDbRef.current = db;
   }
 
   function handlePointerMove(e) {
     if (!isDragging.current) return;
     const db = computeDb(e.clientY);
     setLocalDb(db);
-    onChangeRef.current(dbToRaw(db));
+    pendingDbRef.current = db;
   }
 
   function handlePointerUp() {
+    if (isDragging.current && pendingDbRef.current !== null) {
+      onChangeRef.current(dbToRaw(pendingDbRef.current));
+    }
     isDragging.current = false;
+    pendingDbRef.current = null;
   }
 
   const capPos = dbToPos(localDb);

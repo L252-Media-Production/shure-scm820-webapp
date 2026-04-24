@@ -3,11 +3,20 @@ import { useMixerStore } from '../state/mixerStore.js';
 
 const WS_URL =
   import.meta.env.VITE_WS_URL ||
-  `ws://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080`;
+  `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost:8080'}`;
 
 const API_URL = WS_URL.replace(/^ws/, 'http');
 const RECONNECT_DELAY_MS = 3000;
 const LOADING_TIMEOUT_MS = 8000;
+const MAX_DEBUG_ENTRIES = 200;
+
+const NON_AUDIO_PARAMS = new Set([
+  'DEVICE_ID', 'SERIAL_NUM', 'FW_VER',
+  'IP_SUBNET_SHURE_CONTROL', 'IP_GATEWAY_SHURE_CONTROL',
+  'NETWORK_AUDIO_PROTOCOL', 'NETWORK_AUDIO_VER',
+  'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
+  'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
+]);
 
 function makeLoadingState() {
   return { queue: [], pending: new Set(), total: 0, active: false, timer: null };
@@ -23,6 +32,7 @@ function finishLoading(lr, setLoadingProgress) {
 export function useSCM820() {
   const wsRef = useRef(null);
   const meterLevelsRef = useRef([]);
+  const debugLogRef = useRef([]);
   // queue: ordered list of expected keys (mirrors GET order — used to correlate REP ERR)
   // pending: Set for O(1) lookup of normal REPs
   const loadingRef = useRef(makeLoadingState());
@@ -36,7 +46,14 @@ export function useSCM820() {
 
   const sendSet = useCallback((channel, param, value) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'SET', channel, param, value: String(value) }));
+      const strValue = String(value);
+      wsRef.current.send(JSON.stringify({ type: 'SET', channel, param, value: strValue }));
+      if (!NON_AUDIO_PARAMS.has(param)) {
+        debugLogRef.current = [
+          { dir: '→', channel, param, value: strValue, ts: Date.now() },
+          ...debugLogRef.current,
+        ].slice(0, MAX_DEBUG_ENTRIES);
+      }
     }
   }, []);
 
@@ -133,6 +150,12 @@ export function useSCM820() {
                 if (lr.pending.size === 0) finishLoading(lr, setLoadingProgress);
               }
             }
+            if (!NON_AUDIO_PARAMS.has(msg.param)) {
+              debugLogRef.current = [
+                { dir: '←', channel: msg.channel, param: msg.param, value: msg.value, ts: Date.now() },
+                ...debugLogRef.current,
+              ].slice(0, MAX_DEBUG_ENTRIES);
+            }
             if (msg.channel === 0) {
               applyDeviceParam(msg.param, msg.value);
             } else {
@@ -171,5 +194,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
 
-  return { sendSet, meterLevelsRef, updateDeviceHost, loadingProgress };
+  return { sendSet, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
 }

@@ -3,6 +3,7 @@ import { useSCM820 } from './hooks/useSCM820.js';
 import { useMixerStore } from './state/mixerStore.js';
 import { MixerLayout } from './components/MixerLayout.jsx';
 import { ConnectionModal } from './components/ConnectionModal.jsx';
+import { DebugDrawer } from './components/DebugDrawer.jsx';
 
 function InfoRow({ label, value }) {
   return (
@@ -183,7 +184,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 }
 
 export default function App() {
-  const { sendSet, meterLevelsRef, updateDeviceHost, loadingProgress } = useSCM820();
+  const { sendSet, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
 
@@ -286,6 +287,8 @@ export default function App() {
           onClose={() => setShowModal(false)}
         />
       )}
+
+      <DebugDrawer debugLogRef={debugLogRef} />
     </div>
   );
 }
