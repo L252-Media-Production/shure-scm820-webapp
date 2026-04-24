@@ -125,13 +125,24 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 
           {/* Meter Rate */}
           <div className="py-0.5">
-            <div className="text-zinc-500 mb-1">Meter Rate</div>
-            <div className="flex gap-1">
-              <SegBtn active={meterRateMs === 0}   onClick={() => sendSet(null, 'METER_RATE', '0')}>OFF</SegBtn>
-              <SegBtn active={meterRateMs === 50}  onClick={() => sendSet(null, 'METER_RATE', '50')}>50ms</SegBtn>
-              <SegBtn active={meterRateMs === 100} onClick={() => sendSet(null, 'METER_RATE', '100')}>100ms</SegBtn>
-              <SegBtn active={meterRateMs === 200} onClick={() => sendSet(null, 'METER_RATE', '200')}>200ms</SegBtn>
-              <SegBtn active={meterRateMs === 500} onClick={() => sendSet(null, 'METER_RATE', '500')}>500ms</SegBtn>
+            <div className="flex justify-between items-baseline mb-1">
+              <div className="text-zinc-500">Meter Rate</div>
+              <div className="text-zinc-300 font-mono text-[10px]">
+                {isNaN(meterRateMs) ? '—' : `${meterRateMs} ms`}
+              </div>
+            </div>
+            <input
+              type="range"
+              min={100}
+              max={2000}
+              step={50}
+              value={isNaN(meterRateMs) ? 100 : Math.min(2000, Math.max(100, meterRateMs))}
+              onChange={(e) => sendSet(null, 'METER_RATE', e.target.value)}
+              className="w-full accent-blue-500 cursor-pointer"
+            />
+            <div className="flex justify-between text-[9px] text-zinc-600 font-mono mt-0.5">
+              <span>100ms</span>
+              <span>2000ms</span>
             </div>
           </div>
 
