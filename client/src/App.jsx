@@ -44,9 +44,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
     if (host.trim()) onHostChange(host.trim());
   }
 
-  const meterRateDisplay = deviceInfo.meterRate != null
-    ? `${parseInt(deviceInfo.meterRate, 10)} ms`
-    : null;
+  const meterRateMs = parseInt(deviceInfo.meterRate, 10);
 
   return (
     <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
@@ -118,15 +116,24 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 
           {/* Headphone Source */}
           <div className="py-0.5">
-            <div className="text-zinc-500 mb-1">HP Source</div>
+            <div className="text-zinc-500 mb-1">Headphone Source</div>
             <div className="flex gap-1">
               <SegBtn active={deviceInfo.headphoneSource === 'PRE_FADER'}  onClick={() => sendSet(null, 'HEADPHONE_SOURCE', 'PRE_FADER')}>PRE</SegBtn>
               <SegBtn active={deviceInfo.headphoneSource === 'POST_FADER'} onClick={() => sendSet(null, 'HEADPHONE_SOURCE', 'POST_FADER')}>POST</SegBtn>
             </div>
           </div>
 
-          {/* Meter Rate (read-only — set by server automatically) */}
-          <InfoRow label="Meter Rate" value={meterRateDisplay} />
+          {/* Meter Rate */}
+          <div className="py-0.5">
+            <div className="text-zinc-500 mb-1">Meter Rate</div>
+            <div className="flex gap-1">
+              <SegBtn active={meterRateMs === 0}   onClick={() => sendSet(null, 'METER_RATE', '0')}>OFF</SegBtn>
+              <SegBtn active={meterRateMs === 50}  onClick={() => sendSet(null, 'METER_RATE', '50')}>50ms</SegBtn>
+              <SegBtn active={meterRateMs === 100} onClick={() => sendSet(null, 'METER_RATE', '100')}>100ms</SegBtn>
+              <SegBtn active={meterRateMs === 200} onClick={() => sendSet(null, 'METER_RATE', '200')}>200ms</SegBtn>
+              <SegBtn active={meterRateMs === 500} onClick={() => sendSet(null, 'METER_RATE', '500')}>500ms</SegBtn>
+            </div>
+          </div>
 
           <div className="py-0.5">
             <div className="text-zinc-500 mb-1">LEDs</div>
@@ -190,6 +197,7 @@ export default function App() {
 
   const [showModal, setShowModal] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
+  const [zoom, setZoom] = useState(100);
   const hasConnectedRef = useRef(false);
 
   useEffect(() => {
@@ -220,6 +228,21 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest">Shure</span>
           <span className="text-zinc-200 font-bold tracking-wide">SCM820 Virtual Mixer</span>
+        </div>
+
+        {/* Zoom control */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-wider">Zoom</span>
+          <input
+            type="range"
+            min={50}
+            max={100}
+            step={5}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="w-24 accent-blue-500 cursor-pointer"
+          />
+          <span className="text-[10px] text-zinc-500 font-mono w-8 text-right">{zoom}%</span>
         </div>
 
         {/* Clickable status indicator */}
@@ -264,7 +287,11 @@ export default function App() {
         </div>
       )}
 
-      {connected && <MixerLayout sendSet={sendSet} meterLevelsRef={meterLevelsRef} />}
+      {connected && (
+        <div style={{ zoom: `${zoom}%` }}>
+          <MixerLayout sendSet={sendSet} meterLevelsRef={meterLevelsRef} />
+        </div>
+      )}
 
       {/* Loading overlay — shown while initial state is being synced from device */}
       {connected && loadingProgress !== null && (

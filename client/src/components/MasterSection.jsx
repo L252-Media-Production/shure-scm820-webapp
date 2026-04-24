@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMixerStore } from '../state/mixerStore.js';
 import { VUMeter } from './VUMeter.jsx';
 import { Fader } from './Fader.jsx';
@@ -7,13 +8,60 @@ const OUTPUT_A_INDEX = 17;
 const OUTPUT_B_INDEX = 18;
 const MIX_A_CH = 18;
 const MIX_B_CH = 19;
+const NAME_MAX_LEN = 31;
+
+function MixLabel({ ch, name, fallback, sendSet }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    setDraft(name || fallback);
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== name) {
+      sendSet(ch, 'CHAN_NAME', `{${trimmed.padEnd(NAME_MAX_LEN)}}`);
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') commit();
+    if (e.key === 'Escape') setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={NAME_MAX_LEN}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        className="text-[10px] bg-zinc-900 border border-blue-500 rounded px-1 py-0.5 text-center text-zinc-100 focus:outline-none font-semibold w-16"
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={startEdit}
+      title="Click to rename"
+      className="text-[10px] text-zinc-400 font-semibold cursor-pointer hover:text-white hover:underline underline-offset-2"
+    >
+      {name || fallback}
+    </span>
+  );
+}
 
 export function MasterSection({ sendSet, meterLevelsRef }) {
   const channels = useMixerStore((s) => s.channels);
   const mixA = channels[MIX_A_CH] ?? {};
   const mixB = channels[MIX_B_CH] ?? {};
 
-  // Muted if either output is muted
   const isMuted = !!(mixA.mute || mixB.mute);
 
   function handleMute() {
@@ -40,11 +88,11 @@ export function MasterSection({ sendSet, meterLevelsRef }) {
         <div className="flex gap-2">
           <div className="flex flex-col items-center gap-1">
             <VUMeter levelIndex={OUTPUT_A_INDEX} meterLevelsRef={meterLevelsRef} />
-            <span className="text-[10px] text-zinc-400 font-semibold">OUT A</span>
+            <MixLabel ch={MIX_A_CH} name={mixA.name} fallback="MIX A" sendSet={sendSet} />
           </div>
           <div className="flex flex-col items-center gap-1">
             <VUMeter levelIndex={OUTPUT_B_INDEX} meterLevelsRef={meterLevelsRef} />
-            <span className="text-[10px] text-zinc-400 font-semibold">OUT B</span>
+            <MixLabel ch={MIX_B_CH} name={mixB.name} fallback="MIX B" sendSet={sendSet} />
           </div>
         </div>
       </div>

@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
         name: 'SCM820 Virtual Mixer',
         short_name: 'SCM820',
@@ -16,8 +16,11 @@ export default defineConfig({
         background_color: '#18181b',
         display: 'standalone',
         orientation: 'landscape',
+        start_url: '/',
         icons: [
-          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: 'icon.svg',          sizes: 'any',     type: 'image/svg+xml' },
+          { src: 'pwa-192x192.png',   sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png',   sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
       workbox: {
