@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 import debugLib from 'debug';
 import { createBridge } from './bridge.js';
 import { startMock } from './mock.js';
+import { createXtouchBridge } from './xtouchBridge.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.resolve(__dirname, '../client/dist');
@@ -50,6 +51,57 @@ const deviceConfig = {
   host: process.env.SCM820_HOST || '127.0.0.1',
   port: SCM820_PORT,
 };
+
+const xtouchConfig = {
+  host: process.env.XTOUCH_HOST || '',
+  port: parseInt(process.env.XTOUCH_PORT, 10) || 5004,
+};
+
+// All active SCM820 bridges (one per WS client) — used to forward X-Touch commands
+const activeBridges = new Set();
+
+// Last known value per "channel:param" key — used to sync X-Touch on (re)connect
+const deviceStateCache = new Map();
+
+// Single X-Touch bridge instance (shared across all WS clients)
+let xtouchBridge = null;
+
+function startXtouchBridge() {
+  if (xtouchBridge) {
+    xtouchBridge.destroy();
+    xtouchBridge = null;
+  }
+  if (!xtouchConfig.host) return;
+
+  xtouchBridge = createXtouchBridge(xtouchConfig.host, xtouchConfig.port);
+
+  xtouchBridge.emitter.on('connected', () => {
+    debug('X-Touch connected at %s:%d', xtouchConfig.host, xtouchConfig.port);
+    broadcastToClients({ type: 'XTOUCH_CONNECTED', host: xtouchConfig.host });
+    // Replay cached device state so the bridge can push it to the X-Touch
+    for (const [key, value] of deviceStateCache) {
+      const [ch, ...paramParts] = key.split(':');
+      xtouchBridge.applyRep(parseInt(ch, 10), paramParts.join(':'), value);
+    }
+  });
+
+  xtouchBridge.emitter.on('disconnected', () => {
+    debug('X-Touch disconnected');
+    broadcastToClients({ type: 'XTOUCH_DISCONNECTED' });
+  });
+
+  xtouchBridge.emitter.on('command', ({ type, channel, param, value }) => {
+    for (const bridge of activeBridges) {
+      if (type === 'SET') bridge.sendSet(channel, param, value);
+    }
+  });
+}
+
+function broadcastToClients(payload) {
+  for (const client of wss.clients) {
+    sendToClient(client, payload);
+  }
+}
 
 // Returns array of "channel:param" keys matching every GET sent — used by the client to
 // track exactly which REPs it still needs before hiding the loading screen.
@@ -114,6 +166,7 @@ wss.on('connection', (ws) => {
   debug('WS client connected — creating dedicated bridge');
 
   const bridge = createBridge(deviceConfig.host, deviceConfig.port);
+  activeBridges.add(bridge);
 
   bridge.emitter.on('connected', async () => {
     debug('Bridge connected for client');
@@ -133,6 +186,10 @@ wss.on('connection', (ws) => {
 
   bridge.emitter.on('rep', (msg) => {
     sendToClient(ws, { type: 'REP', channel: msg.channel, param: msg.param, value: msg.value });
+    // Cache for X-Touch state sync on (re)connect
+    deviceStateCache.set(`${msg.channel}:${msg.param}`, msg.value);
+    // Forward to X-Touch if it's connected
+    xtouchBridge?.applyRep(msg.channel, msg.param, msg.value);
   });
 
   bridge.emitter.on('err', () => {
@@ -148,6 +205,13 @@ wss.on('connection', (ws) => {
   });
 
   sendToClient(ws, { type: 'CONFIG', host: deviceConfig.host, mac: null });
+  // Tell the client about X-Touch config and current connection state
+  sendToClient(ws, {
+    type: 'XTOUCH_CONFIG',
+    host: xtouchConfig.host,
+    port: xtouchConfig.port,
+    connected: xtouchBridge?.connected ?? false,
+  });
 
   ws.on('message', (data) => {
     let payload;
@@ -167,6 +231,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    activeBridges.delete(bridge);
     bridge.destroy();
     debug('WS client disconnected — bridge destroyed');
   });
@@ -227,6 +292,42 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  if (req.url === '/api/xtouch' && req.method === 'GET') {
+    res.writeHead(200, corsHeaders);
+    res.end(JSON.stringify({
+      host: xtouchConfig.host,
+      port: xtouchConfig.port,
+      connected: xtouchBridge?.connected ?? false,
+    }));
+    return;
+  }
+
+  if (req.url === '/api/xtouch' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { host, port } = JSON.parse(body);
+        if (!host || typeof host !== 'string' || !host.trim()) throw new Error('invalid host');
+        const parsedPort = port ? parseInt(port, 10) : 5004;
+        if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65534) throw new Error('invalid port');
+
+        xtouchConfig.host = host.trim();
+        xtouchConfig.port = parsedPort;
+        startXtouchBridge();
+
+        broadcastToClients({ type: 'XTOUCH_CONFIG', host: xtouchConfig.host, port: xtouchConfig.port, connected: false });
+
+        res.writeHead(200, corsHeaders);
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, corsHeaders);
+        res.end(JSON.stringify({ error: 'Invalid request body' }));
+      }
+    });
+    return;
+  }
+
   // Serve static files from client/dist
   const urlPath = req.url.split('?')[0];
   let filePath = path.join(STATIC_DIR, urlPath === '/' ? 'index.html' : urlPath);
@@ -248,7 +349,11 @@ async function handleHttpRequest(req, res) {
   });
 }
 
+// Start X-Touch bridge on boot if host is configured
+startXtouchBridge();
+
 httpServer.listen(WS_PORT, WS_HOST, () => {
   console.log(`[server] WebSocket server listening on ws://${WS_HOST}:${WS_PORT}`);
   if (USE_MOCK) console.log('[server] Using mock SCM820 device');
+  if (xtouchConfig.host) console.log(`[server] X-Touch bridge connecting to ${xtouchConfig.host}:${xtouchConfig.port}`);
 });

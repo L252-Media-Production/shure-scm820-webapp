@@ -43,6 +43,8 @@ export function useSCM820() {
   const applyRep = useMixerStore((s) => s.applyRep);
   const applyDeviceParam = useMixerStore((s) => s.applyDeviceParam);
   const setDeviceInfo = useMixerStore((s) => s.setDeviceInfo);
+  const setXtouchConnected = useMixerStore((s) => s.setXtouchConnected);
+  const setXtouchInfo = useMixerStore((s) => s.setXtouchInfo);
 
   const [loadingProgress, setLoadingProgress] = useState(null);
 
@@ -96,6 +98,19 @@ export function useSCM820() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host }),
+      });
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const updateXtouchHost = useCallback(async (host, port) => {
+    try {
+      const resp = await fetch(`${API_URL}/api/xtouch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, port }),
       });
       return resp.ok;
     } catch {
@@ -215,6 +230,20 @@ export function useSCM820() {
           case 'SAMPLE':
             meterLevelsRef.current = msg.levels;
             break;
+
+          case 'XTOUCH_CONNECTED':
+            setXtouchConnected(true);
+            if (msg.host !== undefined) setXtouchInfo({ host: msg.host });
+            break;
+
+          case 'XTOUCH_DISCONNECTED':
+            setXtouchConnected(false);
+            break;
+
+          case 'XTOUCH_CONFIG':
+            setXtouchInfo({ host: msg.host ?? '', port: msg.port ?? 5004 });
+            setXtouchConnected(msg.connected ?? false);
+            break;
         }
       };
     }
@@ -227,7 +256,7 @@ export function useSCM820() {
       clearTimeout(loadingRef.current.timer);
       ws?.close();
     };
-  }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
+  }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo, setXtouchConnected, setXtouchInfo]);
 
-  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
+  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchHost, loadingProgress };
 }

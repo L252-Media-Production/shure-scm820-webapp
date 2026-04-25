@@ -91,9 +91,16 @@ export const useMixerStore = create((set) => ({
     rearPanelLock: null,
   },
 
+  xtouchConnected: false,
+  xtouchInfo: { host: '', port: 5004 },
+
   setConnected: (connected) => set({ connected }),
 
   setDeviceInfo: (info) => set((state) => ({ deviceInfo: { ...state.deviceInfo, ...info } })),
+
+  setXtouchConnected: (xtouchConnected) => set({ xtouchConnected }),
+
+  setXtouchInfo: (info) => set((state) => ({ xtouchInfo: { ...state.xtouchInfo, ...info } })),
 
   applyDeviceParam: (param, value) =>
     set((state) => {
