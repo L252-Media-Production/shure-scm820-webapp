@@ -33,6 +33,8 @@ export function useSCM820() {
   const wsRef = useRef(null);
   const meterLevelsRef = useRef([]);
   const debugLogRef = useRef([]);
+  // Keys of commands sent from the debug tester — their REPs should always be logged
+  const testPendingRef = useRef(new Set());
   // queue: ordered list of expected keys (mirrors GET order — used to correlate REP ERR)
   // pending: Set for O(1) lookup of normal REPs
   const loadingRef = useRef(makeLoadingState());
@@ -54,6 +56,37 @@ export function useSCM820() {
           ...debugLogRef.current,
         ].slice(0, MAX_DEBUG_ENTRIES);
       }
+    }
+  }, []);
+
+  const sendGet = useCallback((channel, param) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'GET', channel, param }));
+      debugLogRef.current = [
+        { dir: '→', channel, param, value: '(GET)', ts: Date.now() },
+        ...debugLogRef.current,
+      ].slice(0, MAX_DEBUG_ENTRIES);
+    }
+  }, []);
+
+  // Used by the debug tester — bypasses NON_AUDIO_PARAMS filter so responses always appear
+  const sendTestCommand = useCallback((type, channel, param, value) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    const key = `${channel}:${param}`;
+    testPendingRef.current.add(key);
+    if (type === 'GET') {
+      wsRef.current.send(JSON.stringify({ type: 'GET', channel, param }));
+      debugLogRef.current = [
+        { dir: '→', channel, param, value: '(GET)', ts: Date.now() },
+        ...debugLogRef.current,
+      ].slice(0, MAX_DEBUG_ENTRIES);
+    } else {
+      const strValue = String(value);
+      wsRef.current.send(JSON.stringify({ type: 'SET', channel, param, value: strValue }));
+      debugLogRef.current = [
+        { dir: '→', channel, param, value: strValue, ts: Date.now() },
+        ...debugLogRef.current,
+      ].slice(0, MAX_DEBUG_ENTRIES);
     }
   }, []);
 
@@ -150,7 +183,9 @@ export function useSCM820() {
                 if (lr.pending.size === 0) finishLoading(lr, setLoadingProgress);
               }
             }
-            if (!NON_AUDIO_PARAMS.has(msg.param)) {
+            const repKey = `${msg.channel}:${msg.param}`;
+            const isTestRep = testPendingRef.current.delete(repKey);
+            if (isTestRep || !NON_AUDIO_PARAMS.has(msg.param)) {
               debugLogRef.current = [
                 { dir: '←', channel: msg.channel, param: msg.param, value: msg.value, ts: Date.now() },
                 ...debugLogRef.current,
@@ -194,5 +229,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
 
-  return { sendSet, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
+  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
 }

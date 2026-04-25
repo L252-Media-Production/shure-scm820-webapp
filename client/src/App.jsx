@@ -202,7 +202,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 }
 
 export default function App() {
-  const { sendSet, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
+  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
 
@@ -326,7 +326,7 @@ export default function App() {
         />
       )}
 
-      <DebugDrawer debugLogRef={debugLogRef} />
+      <DebugDrawer debugLogRef={debugLogRef} sendTestCommand={sendTestCommand} />
     </div>
   );
 }
