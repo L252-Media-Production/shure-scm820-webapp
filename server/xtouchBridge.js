@@ -158,10 +158,12 @@ export function createXtouchBridge(localPort = 5004) {
       const scm820 = idx + 1;
       const state  = channels[idx];
       if (state.inputSource !== 'Network') {
-        const next = state.phantomPower ? 'OFF' : 'ON';
-        debug('rec ch%d phantom %s', scm820, next);
-        console.log(`[xtouch] REC ch${scm820} pressed → PHANTOM_PWR_ENABLE ${next}`);
-        emitter.emit('command', { type: 'SET', channel: scm820, param: 'PHANTOM_PWR_ENABLE', value: next });
+        const willEnable = !state.phantomPower;
+        lastTouched[idx] = 'phantom';
+        debug('rec ch%d phantom %s', scm820, willEnable ? 'ON' : 'OFF');
+        console.log(`[xtouch] REC ch${scm820} pressed → PHANTOM_PWR_ENABLE ${willEnable ? 'ON' : 'OFF'}`);
+        midi.sendSysex(scribbleSysex(idx, willEnable ? '48V ON ' : '48V OFF', 1));
+        emitter.emit('command', { type: 'SET', channel: scm820, param: 'PHANTOM_PWR_ENABLE', value: willEnable ? 'ON' : 'OFF' });
       } else {
         console.log(`[xtouch] REC ch${scm820} pressed — ignored (input source is Network)`);
       }
@@ -192,12 +194,16 @@ export function createXtouchBridge(localPort = 5004) {
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_MUTE', value: 'TOGGLE' });
 
     } else if (note >= NOTE_SELECT && note < NOTE_SELECT + 8) {
-      // SELECT: cycle mic sensitivity LINE_LVL → MIC_LVL_26DB → MIC_LVL_46DB → …
-      const idx      = note - NOTE_SELECT;
-      const scm820   = idx + 1;
-      const state    = channels[idx];
-      const curIdx   = MIC_LEVELS.indexOf(state.micLevel);
-      const next     = MIC_LEVELS[(curIdx + 1) % MIC_LEVELS.length];
+      // SELECT: cycle mic sensitivity — only when input is Analog; ignore in Network mode
+      const idx   = note - NOTE_SELECT;
+      const state = channels[idx];
+      if (state.inputSource === 'Network') {
+        console.log(`[xtouch] SELECT ch${idx + 1} pressed — ignored (input source is Network)`);
+        return;
+      }
+      const scm820 = idx + 1;
+      const curIdx = MIC_LEVELS.indexOf(state.micLevel);
+      const next   = MIC_LEVELS[(curIdx + 1) % MIC_LEVELS.length];
       lastTouched[idx] = 'select';
       debug('select ch%d micLevel %s', scm820, next);
       console.log(`[xtouch] SELECT ch${scm820} pressed → AUDIO_IN_LVL_SWITCH ${next}`);
@@ -242,6 +248,9 @@ export function createXtouchBridge(localPort = 5004) {
           const on = value === 'ON';
           channels[idx].phantomPower = on;
           midi.sendNoteOn(0, NOTE_REC + idx, on ? LED_ON : LED_OFF);
+          if (lastTouched[idx] === 'phantom') {
+            midi.sendSysex(scribbleSysex(idx, on ? '48V ON ' : '48V OFF', 1));
+          }
           break;
         }
         case 'INPUT_AUDIO_SOURCE': {
@@ -318,6 +327,8 @@ export function createXtouchBridge(localPort = 5004) {
         midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
       } else if (lt === 'select') {
         midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
+      } else if (lt === 'phantom') {
+        midi.sendSysex(scribbleSysex(idx, s.phantomPower ? '48V ON ' : '48V OFF', 1));
       } else {
         midi.sendSysex(scribbleSysex(idx, '       ', 1));
       }
