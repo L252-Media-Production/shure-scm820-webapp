@@ -9,14 +9,30 @@
  *   notes  8-15  → SOLO buttons     (strips 1-8) → input source toggle (Analog ↔ Network)
  *   notes 16-23  → MUTE buttons     (strips 1-8) → mute toggle
  *   notes 24-31  → SELECT buttons   (strips 1-8) → mic sensitivity cycle (Line / +26dB / +46dB)
+ *   notes 32-39  → V-Pot push       (strips 1-8) → mode-dependent action
+ *   note  40     → Encoder Assign: TRACK         → Lo-cut mode
+ *   note  42     → Encoder Assign: PAN/SURROUND  → Hi-shelf mode
+ *   note  44     → Encoder Assign: EQ            → Fine gain mode
  *
  * MCU pitch bend:
  *   MIDI ch 0-7  → strip faders 1-8 → AUDIO_GAIN_HI_RES ch 1-8
  *   MIDI ch 8    → master fader     → AUDIO_GAIN_HI_RES ch 18 + 19
  *
+ * MCU control change (encoder rotation, relative):
+ *   CC 16-23     → V-Pot encoders 1-8 → mode-dependent parameter
+ *   Relative encoding: values 1-63 = CW (+), 65-127 = CCW (-)
+ *
  * Scribble strip (per channel):
  *   Line 1 (top):    channel name from SCM820
- *   Line 2 (bottom): last-touched status — dB value, MUTED/UNMUTED, or mic level
+ *   Line 2 (bottom): last-touched status — dB, MUTED/UNMUTED, mic level, lo-cut freq, hi-shelf gain
+ *
+ * Encoder assign modes (one active at a time; press same button again to deactivate):
+ *   locut    → V-Pot rotate: LOW_CUT_FREQ (25-320 Hz, 1 Hz/click)
+ *              V-Pot push:   LOW_CUT_ENABLE toggle
+ *   hishelf  → V-Pot rotate: HIGH_SHELF_GAIN (0-24 = -12 to +12 dB, 1/click)
+ *              V-Pot push:   HIGH_SHELF_ENABLE toggle
+ *   finegain → V-Pot rotate: AUDIO_GAIN_HI_RES (±1 raw = 0.1 dB/click)
+ *              V-Pot push:   (no action)
  */
 
 import { createRtpMidiServer } from './rtpmidiClient.js';
@@ -32,6 +48,14 @@ const GAIN_10DB   = 1200;   // SCM820 raw = +10 dB (10 raw/dB above unity)
 const FADER_MAX   = 16383;
 const FADER_UNITY = 12544;  // X-Touch MCU pitch-bend value at 0 dB (empirically calibrated)
 
+// SCM820 lo-cut and hi-shelf ranges
+const LO_CUT_FREQ_MIN    = 25;
+const LO_CUT_FREQ_MAX    = 320;
+const LO_CUT_FREQ_DEFAULT = 80;
+const HI_SHELF_GAIN_MIN  = 0;
+const HI_SHELF_GAIN_MAX  = 24;
+const HI_SHELF_GAIN_UNITY = 12;  // raw 12 = 0 dB
+
 // How long after a fader touch to ignore SCM820 feedback (prevents echo loops)
 const ECHO_SUPPRESS_MS = 600;
 
@@ -40,6 +64,15 @@ const NOTE_REC    = 0;
 const NOTE_SOLO   = 8;
 const NOTE_MUTE   = 16;
 const NOTE_SELECT = 24;
+const NOTE_VPOT_PUSH_BASE = 32;  // notes 32-39 = encoder pushes for strips 1-8
+
+// Encoder Assign button notes
+const NOTE_ASSIGN_TRACK = 40;   // 0x28 → lo-cut mode
+const NOTE_ASSIGN_PAN   = 42;   // 0x2A → hi-shelf mode
+const NOTE_ASSIGN_EQ    = 44;   // 0x2C → fine gain mode
+
+// V-Pot encoder CC range
+const CC_ENCODER_BASE = 16;     // CC 16-23 = encoders 1-8
 
 const LED_ON  = 127;
 const LED_OFF = 0;
@@ -83,6 +116,17 @@ function gainToDb(gain) {
   return s.slice(0, 7).padEnd(7, ' ');
 }
 
+// Format a lo-cut frequency as a 7-char label.
+function loCutFreqLabel(freq) {
+  return (freq + 'Hz').padEnd(7, ' ').slice(0, 7);
+}
+
+// Format a raw hi-shelf gain (0-24, unity=12) as a 7-char dB label.
+function hiShelfGainLabel(raw) {
+  const db = raw - HI_SHELF_GAIN_UNITY;
+  return ((db >= 0 ? '+' : '') + db + 'dB').padEnd(7, ' ').slice(0, 7);
+}
+
 // X-Touch scribble strip (MCU-compatible): F0 00 00 66 14 12 [offset] [7 chars] F7
 // line 0 = top row (name), line 1 = bottom row (status). Each strip gets 7 chars.
 function scribbleSysex(stripIndex, text, line = 0) {
@@ -95,7 +139,12 @@ function scribbleSysex(stripIndex, text, line = 0) {
 }
 
 function defaultChannelState() {
-  return { name: '', gain: 1100, mute: false, phantomPower: false, inputSource: 'Analog', micLevel: 'LINE_LVL' };
+  return {
+    name: '', gain: 1100, mute: false, phantomPower: false,
+    inputSource: 'Analog', micLevel: 'LINE_LVL',
+    lowCutEnabled: false, lowCutFreq: LO_CUT_FREQ_DEFAULT,
+    hiShelfEnabled: false, hiShelfGain: HI_SHELF_GAIN_UNITY,
+  };
 }
 
 /**
@@ -117,12 +166,23 @@ export function createXtouchBridge(localPort = 5004) {
   const faderTouchedAt = new Map();
 
   // Last control interacted with per channel strip — drives scribble line 2 content.
-  // Values: 'fader' | 'mute' | 'select' | null
+  // Values: 'fader' | 'mute' | 'phantom' | 'select' | 'locut' | 'hishelf' | null
   const lastTouched = new Array(8).fill(null);
+
+  // Active encoder assign mode. One of: null | 'locut' | 'hishelf' | 'finegain'
+  let encoderMode = null;
 
   let connected = false;
 
   const midi = createRtpMidiServer(localPort);
+
+  // ── Helper: update encoder assign LEDs ────────────────────────────────────
+
+  function syncEncoderModeLeds() {
+    midi.sendNoteOn(0, NOTE_ASSIGN_TRACK, encoderMode === 'locut'    ? LED_ON : LED_OFF);
+    midi.sendNoteOn(0, NOTE_ASSIGN_PAN,   encoderMode === 'hishelf'  ? LED_ON : LED_OFF);
+    midi.sendNoteOn(0, NOTE_ASSIGN_EQ,    encoderMode === 'finegain' ? LED_ON : LED_OFF);
+  }
 
   // ── X-Touch → SCM820 ───────────────────────────────────────────────────────
 
@@ -146,6 +206,49 @@ export function createXtouchBridge(localPort = 5004) {
       console.log(`[xtouch] Master fader moved → AUDIO_GAIN_HI_RES ${gain} (ch18+19)`);
       emitter.emit('command', { type: 'SET', channel: 18, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
       emitter.emit('command', { type: 'SET', channel: 19, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
+    }
+  });
+
+  // V-Pot encoder rotation (CC 16-23, relative)
+  midi.emitter.on('controlChange', ({ channel, controller, value }) => {
+    if (channel !== 0 || encoderMode === null) return;
+    if (controller < CC_ENCODER_BASE || controller > CC_ENCODER_BASE + 7) return;
+
+    const idx    = controller - CC_ENCODER_BASE;
+    const scm820 = idx + 1;
+    // MCU relative encoding: 1-63 = CW (+), 65-127 = CCW (-)
+    const delta  = value <= 63 ? value : value - 128;
+
+    if (encoderMode === 'locut') {
+      const freq = Math.max(LO_CUT_FREQ_MIN, Math.min(LO_CUT_FREQ_MAX, channels[idx].lowCutFreq + delta));
+      if (freq === channels[idx].lowCutFreq) return;
+      channels[idx].lowCutFreq = freq;
+      lastTouched[idx] = 'locut';
+      debug('encoder ch%d lo-cut freq %d Hz', scm820, freq);
+      console.log(`[xtouch] Encoder ch${scm820} → LOW_CUT_FREQ ${freq}`);
+      midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(freq), 1));
+      emitter.emit('command', { type: 'SET', channel: scm820, param: 'LOW_CUT_FREQ', value: String(freq).padStart(3, '0') });
+
+    } else if (encoderMode === 'hishelf') {
+      const gain = Math.max(HI_SHELF_GAIN_MIN, Math.min(HI_SHELF_GAIN_MAX, channels[idx].hiShelfGain + delta));
+      if (gain === channels[idx].hiShelfGain) return;
+      channels[idx].hiShelfGain = gain;
+      lastTouched[idx] = 'hishelf';
+      debug('encoder ch%d hi-shelf gain %d (raw)', scm820, gain);
+      console.log(`[xtouch] Encoder ch${scm820} → HIGH_SHELF_GAIN ${gain}`);
+      midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(gain), 1));
+      emitter.emit('command', { type: 'SET', channel: scm820, param: 'HIGH_SHELF_GAIN', value: String(gain).padStart(3, '0') });
+
+    } else if (encoderMode === 'finegain') {
+      const gain = Math.max(0, Math.min(GAIN_MAX, channels[idx].gain + delta));
+      if (gain === channels[idx].gain) return;
+      channels[idx].gain = gain;
+      faderTouchedAt.set(idx, Date.now());
+      lastTouched[idx] = 'fader';
+      debug('encoder ch%d fine gain %d', scm820, gain);
+      console.log(`[xtouch] Encoder ch${scm820} fine gain → AUDIO_GAIN_HI_RES ${gain}`);
+      midi.sendSysex(scribbleSysex(idx, gainToDb(gain), 1));
+      emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
     }
   });
 
@@ -212,6 +315,39 @@ export function createXtouchBridge(localPort = 5004) {
       midi.sendNoteOn(0, NOTE_SELECT + idx, next !== 'LINE_LVL' ? LED_ON : LED_OFF);
       midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[next], 1));
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_IN_LVL_SWITCH', value: next });
+
+    } else if (note >= NOTE_VPOT_PUSH_BASE && note < NOTE_VPOT_PUSH_BASE + 8) {
+      // V-Pot push: mode-dependent toggle
+      const idx    = note - NOTE_VPOT_PUSH_BASE;
+      const scm820 = idx + 1;
+
+      if (encoderMode === 'locut') {
+        const willEnable = !channels[idx].lowCutEnabled;
+        lastTouched[idx] = 'locut';
+        debug('vpot push ch%d lo-cut %s', scm820, willEnable ? 'ON' : 'OFF');
+        console.log(`[xtouch] V-Pot push ch${scm820} → LOW_CUT_ENABLE ${willEnable ? 'ON' : 'OFF'}`);
+        midi.sendSysex(scribbleSysex(idx, willEnable ? 'CUT ON ' : 'CUT OFF', 1));
+        emitter.emit('command', { type: 'SET', channel: scm820, param: 'LOW_CUT_ENABLE', value: willEnable ? 'ON' : 'OFF' });
+
+      } else if (encoderMode === 'hishelf') {
+        const willEnable = !channels[idx].hiShelfEnabled;
+        lastTouched[idx] = 'hishelf';
+        debug('vpot push ch%d hi-shelf %s', scm820, willEnable ? 'ON' : 'OFF');
+        console.log(`[xtouch] V-Pot push ch${scm820} → HIGH_SHELF_ENABLE ${willEnable ? 'ON' : 'OFF'}`);
+        midi.sendSysex(scribbleSysex(idx, willEnable ? 'SHF ON ' : 'SHF OFF', 1));
+        emitter.emit('command', { type: 'SET', channel: scm820, param: 'HIGH_SHELF_ENABLE', value: willEnable ? 'ON' : 'OFF' });
+      }
+      // finegain mode: V-Pot push has no action
+
+    } else if (note === NOTE_ASSIGN_TRACK || note === NOTE_ASSIGN_PAN || note === NOTE_ASSIGN_EQ) {
+      // Encoder Assign: switch mode; press the active button again to deactivate
+      const pressed = note === NOTE_ASSIGN_TRACK ? 'locut'
+                    : note === NOTE_ASSIGN_PAN   ? 'hishelf'
+                    : 'finegain';
+      encoderMode = encoderMode === pressed ? null : pressed;
+      syncEncoderModeLeds();
+      console.log(`[xtouch] Encoder mode: ${encoderMode ?? 'off'}`);
+      debug('encoder mode → %s', encoderMode ?? 'off');
     }
   });
 
@@ -272,6 +408,42 @@ export function createXtouchBridge(localPort = 5004) {
           }
           break;
         }
+        case 'LOW_CUT_ENABLE': {
+          const on = value === 'ON';
+          channels[idx].lowCutEnabled = on;
+          if (lastTouched[idx] === 'locut') {
+            midi.sendSysex(scribbleSysex(idx, on ? 'CUT ON ' : 'CUT OFF', 1));
+          }
+          break;
+        }
+        case 'LOW_CUT_FREQ': {
+          const freq = parseInt(value, 10);
+          if (!isNaN(freq)) {
+            channels[idx].lowCutFreq = Math.max(LO_CUT_FREQ_MIN, Math.min(LO_CUT_FREQ_MAX, freq));
+            if (lastTouched[idx] === 'locut') {
+              midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(channels[idx].lowCutFreq), 1));
+            }
+          }
+          break;
+        }
+        case 'HIGH_SHELF_ENABLE': {
+          const on = value === 'ON';
+          channels[idx].hiShelfEnabled = on;
+          if (lastTouched[idx] === 'hishelf') {
+            midi.sendSysex(scribbleSysex(idx, on ? 'SHF ON ' : 'SHF OFF', 1));
+          }
+          break;
+        }
+        case 'HIGH_SHELF_GAIN': {
+          const gain = parseInt(value, 10);
+          if (!isNaN(gain)) {
+            channels[idx].hiShelfGain = Math.max(HI_SHELF_GAIN_MIN, Math.min(HI_SHELF_GAIN_MAX, gain));
+            if (lastTouched[idx] === 'hishelf') {
+              midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(channels[idx].hiShelfGain), 1));
+            }
+          }
+          break;
+        }
         case 'CHAN_NAME': {
           const name = value.replace(/^\{|\}$/g, '').trim();
           channels[idx].name = name;
@@ -294,9 +466,9 @@ export function createXtouchBridge(localPort = 5004) {
   }
 
   // ── SCM820 SAMPLE → X-Touch meters ────────────────────────────────────────
-  // MCU meters: Channel Pressure 0xD0|strip, value = level 0–13
-  // (0=off, 1–12=green segments, 13=clip/red)
-  // SCM820 SAMPLE indices 0–7 map to input channels 1–8.
+  // MCU meters: single 0xD0 status byte, data byte = (stripIndex << 4) | level
+  // level: 0=off, 1-12=green segments, 13=orange, 14=clip/red
+  // SCM820 SAMPLE indices 0-7 map to input channels 1-8.
 
   function applyMeter(levels) {
     if (!connected) return;
@@ -329,12 +501,18 @@ export function createXtouchBridge(localPort = 5004) {
         midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
       } else if (lt === 'phantom') {
         midi.sendSysex(scribbleSysex(idx, s.phantomPower ? '48V ON ' : '48V OFF', 1));
+      } else if (lt === 'locut') {
+        midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(s.lowCutFreq), 1));
+      } else if (lt === 'hishelf') {
+        midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(s.hiShelfGain), 1));
       } else {
         midi.sendSysex(scribbleSysex(idx, '       ', 1));
       }
     }
     // Master fader: use ch18 gain
     midi.sendPitchBend(8, gainToFader(master[0].gain));
+    // Restore encoder assign mode LEDs
+    syncEncoderModeLeds();
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
