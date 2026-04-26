@@ -14,13 +14,14 @@ Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 22
 
 - Real-time channel control: fader gain, mute, Always On
 - Per-channel input source (Analog / Network), mic sensitivity, and 48V phantom power
+- Per-channel EQ: lo-cut filter (25–320 Hz) and hi-shelf gain (±12 dB) with collapsible panel in each channel strip
 - VU meter display driven by SCM820 SAMPLE frames
 - Output A/B controls with mute and gain
 - Direct output source assignment (channels 10–17)
 - Device settings panel: meter mode, meter type, headphone source, LED disable, flash, rear panel lock
 - Live device info: Device ID, serial number, firmware version, network configuration
 - Fader resolution toggle (Coarse / Fine) per channel strip
-- In-browser debug console showing live audio command traffic
+- In-browser debug console with live audio command traffic and a **Hide Peaks** filter (on by default)
 - PWA — installable from the browser on desktop and mobile
 - Docker support for network-accessible deployment
 - Mock SCM820 server for local development without hardware
@@ -137,14 +138,19 @@ Once connected, the status indicator in the browser UI shows **Connected** along
 |---|---|
 | **Faders 1–8** | Input channel gain (AUDIO_GAIN_HI_RES ch 1–8) |
 | **Master fader** | Output A + B gain simultaneously (ch 18 + 19) |
-| **REC ARM 1–8** | Toggle 48V phantom power (analog inputs only; ignored if source is Network) |
-| **SOLO 1–8** | Toggle input source between **Analog** and **Network** |
+| **REC ARM 1–8** | Toggle 48V phantom power (analog inputs only; ignored in Network mode); scribble line 2 shows `48V ON` / `48V OFF` |
+| **SOLO 1–8** | Toggle input source between **Analog** and **Network** (ignored in Network mode — no LED/scribble change) |
 | **MUTE 1–8** | Toggle mute on both mixes |
+| **SELECT 1–8** | Cycle mic sensitivity: `LINE_LVL` → `MIC_LVL_26DB` → `MIC_LVL_46DB` (analog inputs only; ignored in Network mode) |
 | **SOLO LED** | Lit when input source is DANTE/Network |
 | **MUTE LED** | Lit when channel is muted |
 | **REC ARM LED** | Lit when phantom power is on |
-| **Scribble strips** | Show channel names from the SCM820 |
+| **Scribble line 1** | Channel name from the SCM820 |
+| **Scribble line 2** | Last-touched parameter (gain dB, mute state, mic sensitivity, 48V state, lo-cut freq, hi-shelf gain) |
 | **Channel meters** | Live SCM820 input levels (SAMPLE frames at 100 ms) |
+| **Encoder Assign — TRACK** | Switch encoders to **lo-cut mode**: rotate = `LOW_CUT_FREQ` (25–320 Hz, 1 Hz/click); push = toggle `LOW_CUT_ENABLE` |
+| **Encoder Assign — PAN** | Switch encoders to **hi-shelf mode**: rotate = `HIGH_SHELF_GAIN` (±12 dB, 1 dB/click); push = toggle `HIGH_SHELF_ENABLE` |
+| **Encoder Assign — EQ** | Switch encoders to **fine gain mode**: rotate = `AUDIO_GAIN_HI_RES` in small increments |
 
 ### Fader calibration
 
@@ -167,7 +173,7 @@ The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range 
 | Issue | Details |
 |---|---|
 | **X-Touch fader calibration drift** | The two-segment piecewise linear map anchors at 0 dB and +10 dB, but the X-Touch MCU fader physical response is not perfectly linear. Small discrepancies (±1–2 dB) can appear between the X-Touch fader position and the actual SCM820 gain, particularly in the lower half of the travel. |
-| **AUX input (channel 9) not mapped** | The SCM820 aux input (channel 9) has no corresponding strip on the X-Touch. It is controllable from the web UI only. |
+| **AUX input (channel 9) not mapped on X-Touch** | The SCM820 aux input (channel 9) has no corresponding strip on the X-Touch. EQ and all other parameters for channel 9 are controllable from the web UI only. |
 
 ## Fader Resolution
 
@@ -176,7 +182,7 @@ Each channel strip has a **CRSE / FINE** toggle button beneath the dB readout.
 | Mode | Behaviour |
 |---|---|
 | **CRSE** (default) | The SET command is sent once when the fader is released. Use this for normal operation to avoid flooding the device with rapid gain changes. |
-| **FINE** (red) | A SET command is sent on every pointer movement, matching the device's maximum update rate. Use this when precise real-time adjustment is needed. The button turns red as a caution indicator. |
+| **FINE** (orange) | A SET command is sent on every pointer movement, matching the device's maximum update rate. Use this when precise real-time adjustment is needed. The button turns orange as a caution indicator. |
 
 ## Debug Console
 
@@ -186,6 +192,7 @@ The console shows a live, timestamped log of all inbound (`←`) and outbound (`
 
 - Cyan `→` — SET command sent from the UI to the device
 - Green `←` — REP message received from the device
+- **Hide Peaks** checkbox (enabled by default) — filters out high-frequency `AUDIO_IN_PEAK_LVL` and `AUDIO_OUT_PEAK_LVL` messages that would otherwise flood the log
 - The **Clear** button flushes the log
 - A badge on the handle shows how many new entries arrived while the drawer was closed
 
@@ -257,6 +264,10 @@ Key parameters used by this app:
 | `PHANTOM_PWR_ENABLE` | `ON` / `OFF` | Analog inputs only |
 | `AUDIO_IN_LVL_SWITCH` | `LINE_LVL` / `MIC_LVL_26DB` / `MIC_LVL_46DB` | Analog inputs only |
 | `INPUT_AUDIO_GATE_A` | `ON` / `OFF` | Read-only; gate open status |
+| `LOW_CUT_ENABLE` | `ON` / `OFF` | Lo-cut filter on/off |
+| `LOW_CUT_FREQ` | `025`–`320` | Lo-cut frequency in Hz, 3-digit zero-padded |
+| `HIGH_SHELF_ENABLE` | `ON` / `OFF` | Hi-shelf filter on/off |
+| `HIGH_SHELF_GAIN` | `000`–`024` | Hi-shelf gain; raw `12` = 0 dB, range = −12 to +12 dB, 3-digit zero-padded |
 | `DIRECT_OUT_SOURCE` | device-specific | Channels 10–17 |
 | `AUDIO_OUT_LVL_SWITCH` | device-specific | Output A/B level switch |
 | `METER_RATE` | `00000`–`99999` | Milliseconds; `0` stops metering |
