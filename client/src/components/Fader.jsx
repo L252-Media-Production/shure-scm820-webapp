@@ -194,7 +194,7 @@ export function Fader({ value, onChange }) {
         title={fine ? 'Fine mode — every movement sends to device' : 'Coarse mode — sends on release'}
         className={`w-full py-0.5 text-[9px] rounded font-bold tracking-wider transition-colors ${
           fine
-            ? 'bg-red-700 text-red-200'
+            ? 'bg-orange-600 text-orange-100'
             : 'bg-zinc-700 text-zinc-500 hover:bg-zinc-600'
         }`}
       >

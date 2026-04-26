@@ -1,6 +1,6 @@
 {
   "name": "scm820-client",
-  "version": "0.5.1",
+  "version": "0.5.3",
   "type": "module",
   "scripts": {
     "dev": "vite",

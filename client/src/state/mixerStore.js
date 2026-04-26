@@ -19,6 +19,10 @@ function defaultChannel() {
     inputSource: 'Analog',
     phantomPower: false,
     micSens: 'LINE_LVL',
+    lowCutEnabled: false,
+    lowCutFreq: 80,
+    hiShelfEnabled: false,
+    hiShelfGain: 12,  // raw 12 = 0 dB; range 0-24 = -12 to +12 dB
   };
 }
 
@@ -150,6 +154,22 @@ export const useMixerStore = create((set) => ({
         case 'AUDIO_OUT_LVL_SWITCH':
           updated.audioOutLvlSwitch = value;
           break;
+        case 'LOW_CUT_ENABLE':
+          updated.lowCutEnabled = value === 'ON';
+          break;
+        case 'LOW_CUT_FREQ': {
+          const freq = parseInt(value, 10);
+          if (!isNaN(freq)) updated.lowCutFreq = Math.max(25, Math.min(320, freq));
+          break;
+        }
+        case 'HIGH_SHELF_ENABLE':
+          updated.hiShelfEnabled = value === 'ON';
+          break;
+        case 'HIGH_SHELF_GAIN': {
+          const gain = parseInt(value, 10);
+          if (!isNaN(gain)) updated.hiShelfGain = Math.max(0, Math.min(24, gain));
+          break;
+        }
         default:
           return {};
       }

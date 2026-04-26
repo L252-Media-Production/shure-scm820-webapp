@@ -120,6 +120,10 @@ function requestInitialState(bridge) {
     get(ch, 'INPUT_AUDIO_SOURCE');
     get(ch, 'PHANTOM_PWR_ENABLE');
     get(ch, 'AUDIO_IN_LVL_SWITCH');
+    get(ch, 'LOW_CUT_ENABLE');
+    get(ch, 'LOW_CUT_FREQ');
+    get(ch, 'HIGH_SHELF_ENABLE');
+    get(ch, 'HIGH_SHELF_GAIN');
   }
   // Aux channel — no always-on, phantom power, level switch
   get(AUX_CHANNEL, 'CHAN_NAME');
@@ -127,6 +131,10 @@ function requestInitialState(bridge) {
   get(AUX_CHANNEL, 'AUDIO_GAIN_HI_RES');
   get(AUX_CHANNEL, 'INPUT_AUDIO_GATE_A');
   get(AUX_CHANNEL, 'INPUT_AUDIO_SOURCE');
+  get(AUX_CHANNEL, 'LOW_CUT_ENABLE');
+  get(AUX_CHANNEL, 'LOW_CUT_FREQ');
+  get(AUX_CHANNEL, 'HIGH_SHELF_ENABLE');
+  get(AUX_CHANNEL, 'HIGH_SHELF_GAIN');
   for (let ch = 10; ch <= 17; ch++) get(ch, 'DIRECT_OUT_SOURCE');
   for (const ch of [18, 19]) {
     get(ch, 'CHAN_NAME');

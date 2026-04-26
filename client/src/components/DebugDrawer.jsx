@@ -39,14 +39,15 @@ const CHANNEL_OPTIONS = [
   { label: 'Out B (19)', value: 19 },
 ];
 
-function LogTab({ entries, onClear }) {
+function LogTab({ entries, hidePeaks, setHidePeaks, onClear }) {
+  const visible = hidePeaks ? entries.filter((e) => !/PEAK/i.test(e.param)) : entries;
   return (
     <>
       <div className="flex-1 overflow-y-auto p-2 space-y-px">
-        {entries.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="text-zinc-600 font-mono text-[11px] p-1">No audio commands yet.</div>
         ) : (
-          entries.map((e, i) => (
+          visible.map((e, i) => (
             <div key={i} className="flex gap-2 font-mono text-[11px] leading-relaxed hover:bg-zinc-900 px-1 rounded">
               <span className="text-zinc-600 shrink-0 tabular-nums">{fmtTime(e.ts)}</span>
               <span className={`shrink-0 font-bold w-4 ${e.dir === '→' ? 'text-cyan-400' : 'text-green-400'}`}>
@@ -59,7 +60,16 @@ function LogTab({ entries, onClear }) {
           ))
         )}
       </div>
-      <div className="flex justify-end px-3 py-1 border-t border-zinc-800">
+      <div className="flex items-center justify-between px-3 py-1 border-t border-zinc-800">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={hidePeaks}
+            onChange={(e) => setHidePeaks(e.target.checked)}
+            className="w-3 h-3 accent-cyan-500"
+          />
+          <span className="text-[10px] text-zinc-500 font-mono">Hide peaks</span>
+        </label>
         <button
           onClick={onClear}
           className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors font-mono"
@@ -235,6 +245,7 @@ export function DebugDrawer({ debugLogRef, sendTestCommand }) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('log');
   const [entries, setEntries] = useState([]);
+  const [hidePeaks, setHidePeaks] = useState(true);
   const logLenAtClose = useRef(0);
 
   useEffect(() => {
@@ -284,7 +295,7 @@ export function DebugDrawer({ debugLogRef, sendTestCommand }) {
           </div>
 
           {activeTab === 'log' ? (
-            <LogTab entries={entries} onClear={clearLog} />
+            <LogTab entries={entries} hidePeaks={hidePeaks} setHidePeaks={setHidePeaks} onClear={clearLog} />
           ) : (
             <CommandsTab debugLogRef={debugLogRef} sendTestCommand={sendTestCommand} />
           )}
