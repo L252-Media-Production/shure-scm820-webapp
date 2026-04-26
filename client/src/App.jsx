@@ -287,6 +287,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest">Shure</span>
           <span className="text-zinc-200 font-bold tracking-wide">SCM820 Virtual Mixer</span>
+          <span className="text-zinc-600 text-xs font-mono">v{__APP_VERSION__}</span>
         </div>
 
         {/* Zoom control */}
