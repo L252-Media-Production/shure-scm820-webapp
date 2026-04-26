@@ -24,7 +24,10 @@ const debug = debugLib('scm820:xtouch');
 
 // SCM820 gain range
 const GAIN_MAX    = 1280;
+const GAIN_UNITY  = 1100;   // SCM820 raw = 0 dB
+const GAIN_10DB   = 1200;   // SCM820 raw = +10 dB (10 raw/dB above unity)
 const FADER_MAX   = 16383;
+const FADER_UNITY = 12544;  // X-Touch MCU pitch-bend value at 0 dB (empirically calibrated)
 
 // How long after a fader touch to ignore SCM820 feedback (prevents echo loops)
 const ECHO_SUPPRESS_MS = 600;
@@ -37,12 +40,27 @@ const NOTE_MUTE   = 16;
 const LED_ON  = 127;
 const LED_OFF = 0;
 
+// Two-segment linear map anchored at 0 dB so both devices agree on unity.
+// Below 0 dB: [0, FADER_UNITY] ↔ [0, GAIN_UNITY]
+// Above 0 dB: [FADER_UNITY, FADER_MAX] ↔ [GAIN_UNITY, GAIN_10DB]
 function gainToFader(gain) {
-  return Math.round((Math.max(0, Math.min(GAIN_MAX, gain)) / GAIN_MAX) * FADER_MAX);
+  const g = Math.max(0, Math.min(GAIN_MAX, gain));
+  if (g <= GAIN_UNITY) {
+    return Math.round((g / GAIN_UNITY) * FADER_UNITY);
+  }
+  return Math.min(FADER_MAX, Math.round(
+    FADER_UNITY + ((g - GAIN_UNITY) / (GAIN_10DB - GAIN_UNITY)) * (FADER_MAX - FADER_UNITY)
+  ));
 }
 
 function faderToGain(fader) {
-  return Math.round((Math.max(0, Math.min(FADER_MAX, fader)) / FADER_MAX) * GAIN_MAX);
+  const f = Math.max(0, Math.min(FADER_MAX, fader));
+  if (f <= FADER_UNITY) {
+    return Math.round((f / FADER_UNITY) * GAIN_UNITY);
+  }
+  return Math.round(
+    GAIN_UNITY + ((f - FADER_UNITY) / (FADER_MAX - FADER_UNITY)) * (GAIN_10DB - GAIN_UNITY)
+  );
 }
 
 function scribbleSysex(stripIndex, name) {
