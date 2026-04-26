@@ -4,6 +4,10 @@ A web-based virtual mixer for the **Shure SCM820** automatic mixing console. Con
 
 ```
 Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 2202 ←→ SCM820
+                                        ↕
+                              Apple MIDI / RTP-MIDI (UDP)
+                                        ↕
+                              Behringer X-Touch (MCU mode)
 ```
 
 ## Features
@@ -20,6 +24,7 @@ Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 22
 - PWA — installable from the browser on desktop and mobile
 - Docker support for network-accessible deployment
 - Mock SCM820 server for local development without hardware
+- **Behringer X-Touch hardware control surface** via Apple MIDI / RTP-MIDI over the network
 
 ## Stack
 
@@ -108,6 +113,54 @@ docker build --build-arg VITE_WS_URL=ws://mixer.local:80 -t scm820-webapp .
 | `WS_PORT` | `8080` | WebSocket / HTTP server port |
 | `WS_HOST` | `0.0.0.0` | Bind address |
 | `USE_MOCK` | `false` | Set to `true` to use the built-in mock device |
+| `XTOUCH_PORT` | `5004` | UDP control port for the X-Touch Apple MIDI session (data port = this + 1) |
+
+## Behringer X-Touch Integration
+
+The server acts as an **Apple MIDI (RTP-MIDI) acceptor**. The X-Touch initiates the connection — no IP address needs to be configured in the app. The server listens on two adjacent UDP ports (default 5004 control / 5005 data) and waits for the X-Touch to connect.
+
+### X-Touch setup
+
+1. On the X-Touch, go to **Setup → MIDI/Control → Network**
+2. Set the **Host** IP to the IP address of the machine running this server
+3. Set the **Port** to `5004` (or whatever `XTOUCH_PORT` is set to)
+4. Set the mode to **MC Master** (Mackie Control)
+5. The X-Touch will initiate the Apple MIDI session automatically on boot
+
+Once connected, the status indicator in the browser UI shows **Connected** along with the X-Touch's IP address.
+
+> **Network requirement:** The X-Touch and the server must be on the **same subnet**. Apple MIDI uses UDP and will not traverse subnets without explicit routing. If running in Docker, publish the UDP ports (`-p 5004:5004/udp -p 5005:5005/udp`) and ensure the container's host is reachable from the X-Touch's subnet.
+
+### Button and fader mapping
+
+| X-Touch control | SCM820 action |
+|---|---|
+| **Faders 1–8** | Input channel gain (AUDIO_GAIN_HI_RES ch 1–8) |
+| **Master fader** | Output A + B gain simultaneously (ch 18 + 19) |
+| **REC ARM 1–8** | Toggle 48V phantom power (analog inputs only; ignored if source is Network) |
+| **SOLO 1–8** | Toggle input source between **Analog** and **DANTE/Network** |
+| **MUTE 1–8** | Toggle mute on both mixes |
+| **SOLO LED** | Lit when input source is DANTE/Network |
+| **MUTE LED** | Lit when channel is muted |
+| **REC ARM LED** | Lit when phantom power is on |
+| **Scribble strips** | Show channel names from the SCM820 |
+| **Channel meters** | Live SCM820 input levels (SAMPLE frames at 100 ms) |
+
+### Fader calibration
+
+The X-Touch MCU fader range is mapped to the SCM820 gain range using a **two-segment piecewise linear map** anchored at 0 dB, so both devices agree on unity gain regardless of their different full-scale ranges:
+
+| X-Touch fader | SCM820 gain | dB |
+|---|---|---|
+| Bottom (0) | 0 | −∞ |
+| Unity mark (~77%) | 1100 | 0 dB |
+| Full open (16383) | 1200 | +10 dB |
+
+The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range of +10 dB to +18 dB is not reachable from the fader (use the web UI for that range).
+
+### Multiple X-Touch units
+
+**Not currently supported.** Apple MIDI is point-to-point — each session requires its own UDP port pair. The server accepts one X-Touch at a time. A second unit would need a second port pair (e.g. 5006/5007) and a second bridge instance. This is architecturally straightforward but not yet implemented.
 
 ## Fader Resolution
 
@@ -134,12 +187,14 @@ The console shows a live, timestamped log of all inbound (`←`) and outbound (`
 ```
 /
 ├── Dockerfile
-├── docker-compose.yml
+├── compose.yml
 ├── server/
-│   ├── index.js      # HTTP + WebSocket server entry point; serves client/dist
-│   ├── bridge.js     # TCP ↔ WebSocket bridge with auto-reconnect
-│   ├── parser.js     # SCM820 message parser and serializer
-│   └── mock.js       # Mock SCM820 device (responds to all GET/SET commands)
+│   ├── index.js          # HTTP + WebSocket server entry point; serves client/dist
+│   ├── bridge.js         # TCP ↔ WebSocket bridge with auto-reconnect
+│   ├── parser.js         # SCM820 message parser and serializer
+│   ├── mock.js           # Mock SCM820 device (responds to all GET/SET commands)
+│   ├── xtouchBridge.js   # MCU ↔ SCM820 mapping, shadow state, LED/fader/meter logic
+│   └── rtpmidiClient.js  # Pure-JS Apple MIDI (RTP-MIDI) server — accepts X-Touch sessions
 │
 └── client/
     └── src/
