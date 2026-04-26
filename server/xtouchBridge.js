@@ -16,7 +16,7 @@
  * Gain ↔ fader:  linear map over 0–1280 raw ↔ 0–16383 (14-bit)
  */
 
-import { createRtpMidiClient } from './rtpmidiClient.js';
+import { createRtpMidiServer } from './rtpmidiClient.js';
 import { EventEmitter } from 'events';
 import debugLib from 'debug';
 
@@ -60,12 +60,13 @@ function defaultChannelState() {
 }
 
 /**
- * @param {string} host          X-Touch IP address
- * @param {number} remotePort    X-Touch control port (default 5004)
- * @param {number} localPort     Our local control port (default 5006)
+ * @param {number} localPort     Local UDP control port to listen on (default 5004); data = localPort + 1
  * @returns {{ applyRep, destroy, connected, emitter }}
+ *
+ * The X-Touch in MC master mode acts as the Apple MIDI initiator — it sends
+ * IN packets to our server. We listen on localPort and accept the session.
  */
-export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
+export function createXtouchBridge(localPort = 5004) {
   const emitter = new EventEmitter();
 
   // Shadow state for channels 1-8 (index = channel - 1)
@@ -78,7 +79,7 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
 
   let connected = false;
 
-  const midi = createRtpMidiClient(host, remotePort, localPort);
+  const midi = createRtpMidiServer(localPort);
 
   // ── X-Touch → SCM820 ───────────────────────────────────────────────────────
 
@@ -211,17 +212,17 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
-  midi.emitter.on('ready', () => {
+  midi.emitter.on('ready', ({ host: remoteHost }) => {
     connected = true;
-    console.log(`[xtouch] X-Touch connected at ${host}:${remotePort} — pushing full state`);
-    debug('X-Touch ready at %s:%d', host, remotePort);
+    console.log(`[xtouch] X-Touch connected from ${remoteHost} — pushing full state`);
+    debug('X-Touch ready from %s', remoteHost);
     pushFullState();
-    emitter.emit('connected');
+    emitter.emit('connected', { host: remoteHost });
   });
 
   midi.emitter.on('disconnected', () => {
     connected = false;
-    console.log(`[xtouch] X-Touch disconnected from ${host}:${remotePort}`);
+    console.log('[xtouch] X-Touch disconnected — waiting for new connection');
     debug('X-Touch disconnected');
     emitter.emit('disconnected');
   });

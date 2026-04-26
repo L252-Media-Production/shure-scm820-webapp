@@ -1,13 +1,15 @@
 /**
- * Pure-JS Apple MIDI (rtpMIDI) client over UDP.
- * Connects to a remote device (e.g. Behringer X-Touch) and exchanges MIDI via RTP.
+ * Pure-JS Apple MIDI (RTP-MIDI) server — accepts incoming sessions.
+ *
+ * The Behringer X-Touch in MC master+network mode acts as the Apple MIDI
+ * initiator: it sends invitation (IN) packets to our server IP. We respond
+ * with OK and exchange MIDI bidirectionally over RTP.
  *
  * Apple MIDI uses two adjacent UDP ports:
- *   remotePort     — control port (session management: IN/OK/BY/CK)
- *   remotePort + 1 — data port    (RTP-MIDI packets)
+ *   localPort     — control port (session management: IN/OK/BY/CK)
+ *   localPort + 1 — data port    (RTP-MIDI packets)
  *
- * Our local sockets must also be on adjacent ports so the remote side can infer
- * our data port from our control port + 1.
+ * Docker: publish with  -p 5004:5004/udp -p 5005:5005/udp
  */
 
 import dgram from 'dgram';
@@ -16,65 +18,60 @@ import debugLib from 'debug';
 
 const debug = debugLib('scm820:rtpmidi');
 
-const APPLEMIDI_SIG   = 0xffff;
-const VERSION         = 2;
-const CMD_IN          = 0x494e; // 'I''N'
-const CMD_OK          = 0x4f4b; // 'O''K'
-const CMD_BY          = 0x4259; // 'B''Y'
-const CMD_CK          = 0x434b; // 'C''K'
+const APPLEMIDI_SIG  = 0xffff;
+const VERSION        = 2;
+const CMD_IN         = 0x494e; // 'I''N'
+const CMD_OK         = 0x4f4b; // 'O''K'
+const CMD_BY         = 0x4259; // 'B''Y'
+const CMD_CK         = 0x434b; // 'C''K'
 
-const RTP_PAYLOAD_TYPE  = 97;
-const INVITATION_TIMEOUT_MS = 6000;
-const RECONNECT_DELAY_MS    = 10000;
-const CK_INTERVAL_MS        = 15000;
+const RTP_PAYLOAD_TYPE = 97;
+const CK_INTERVAL_MS   = 15000;
 
 function rand32() {
   return (Math.random() * 0x100000000) >>> 0;
 }
 
 /**
- * @param {string} remoteHost   IP of the X-Touch
- * @param {number} remotePort   Control port of X-Touch (default 5004)
- * @param {number} localPort    Our local control port; data port = localPort + 1 (default 5006)
+ * @param {number} localPort  Control port to listen on; data port = localPort + 1 (default 5004/5005)
+ * @returns {{ start, sendNoteOn, sendNoteOff, sendPitchBend, sendSysex, destroy, emitter }}
+ *
+ * emitter events:
+ *   'ready'        { host }   — session established, X-Touch is connected
+ *   'disconnected'            — session ended (BY received or other side went away)
+ *   'noteOn'       { channel, note, velocity }
+ *   'noteOff'      { channel, note, velocity }
+ *   'pitchBend'    { channel, value }          value: 0–16383
+ *   'controlChange'{ channel, controller, value }
+ *   'error'        Error
  */
-export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5006) {
+export function createRtpMidiServer(localPort = 5004) {
   const emitter = new EventEmitter();
 
   let controlSocket = null;
   let dataSocket    = null;
-  let ssrc          = rand32();
-  let token         = rand32();
+  const ssrc        = rand32();
   let seqNum        = 0;
 
-  let controlReady  = false;
-  let dataReady     = false;
-  let sessionActive = false;
-  let destroyed     = false;
+  // Filled in when X-Touch sends its first IN packet
+  let remoteAddr     = null;
+  let remoteCtrlPort = null;
+  let remoteDataPort = null;
 
-  let inviteTimer    = null;
-  let reconnectTimer = null;
-  let ckTimer        = null;
+  let controlAccepted = false;
+  let sessionActive   = false;
+  let destroyed       = false;
+  let ckTimer         = null;
 
   // ── packet builders ────────────────────────────────────────────────────────
 
-  function buildInvite() {
-    const name = Buffer.from('SCM820\0');
-    const buf = Buffer.alloc(16 + name.length);
+  function buildOk(token) {
+    const buf = Buffer.alloc(16);
     buf.writeUInt16BE(APPLEMIDI_SIG, 0);
-    buf.writeUInt16BE(CMD_IN, 2);
+    buf.writeUInt16BE(CMD_OK, 2);
     buf.writeUInt32BE(VERSION, 4);
     buf.writeUInt32BE(token, 8);
     buf.writeUInt32BE(ssrc, 12);
-    name.copy(buf, 16);
-    return buf;
-  }
-
-  function buildBye() {
-    const buf = Buffer.alloc(12);
-    buf.writeUInt16BE(APPLEMIDI_SIG, 0);
-    buf.writeUInt16BE(CMD_BY, 2);
-    buf.writeUInt32BE(VERSION, 4);
-    buf.writeUInt32BE(ssrc, 8);
     return buf;
   }
 
@@ -85,7 +82,7 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
     buf.writeUInt32BE(ssrc, 4);
     buf.writeUInt8(count + 1, 8);
     buf.fill(0, 9, 12);
-    const now = BigInt(Date.now()) * 10n; // convert ms → 100µs units
+    const now = BigInt(Date.now()) * 10n;
     buf.writeBigUInt64BE(ts1, 12);
     buf.writeBigUInt64BE(count === 0 ? now : ts2, 20);
     buf.writeBigUInt64BE(count === 1 ? now : 0n, 28);
@@ -94,21 +91,16 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
 
   function buildRtpMidi(midiBytes) {
     const header = Buffer.alloc(12);
-    header[0] = 0x80; // V=2, P=0, X=0, CC=0
+    header[0] = 0x80;
     header[1] = RTP_PAYLOAD_TYPE & 0x7f;
     header.writeUInt16BE(seqNum++ & 0xffff, 2);
     header.writeUInt32BE(Date.now() & 0xffffffff, 4);
     header.writeUInt32BE(ssrc, 8);
 
-    // Short MIDI section header: B=0, length in lower nibble (max 15)
-    // For longer payloads use long header (2 bytes)
-    const len = midiBytes.length;
-    let midiHdr;
-    if (len <= 0x0f) {
-      midiHdr = Buffer.from([len & 0x0f]);
-    } else {
-      midiHdr = Buffer.from([0x80 | ((len >> 8) & 0x0f), len & 0xff]);
-    }
+    const len    = midiBytes.length;
+    const midiHdr = len <= 0x0f
+      ? Buffer.from([len & 0x0f])
+      : Buffer.from([0x80 | ((len >> 8) & 0x0f), len & 0xff]);
 
     return Buffer.concat([header, midiHdr, Buffer.from(midiBytes)]);
   }
@@ -119,51 +111,7 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
     return buf.length >= 4 && buf.readUInt16BE(0) === APPLEMIDI_SIG;
   }
 
-  function onControlMsg(buf) {
-    if (!isAppleMidi(buf)) return;
-    const cmd = buf.readUInt16BE(2);
-    debug('control ← cmd 0x%s', cmd.toString(16).toUpperCase());
-    if (cmd === CMD_OK && !controlReady) {
-      clearTimeout(inviteTimer);
-      controlReady = true;
-      console.log(`[xtouch] Control handshake OK from ${remoteHost}:${remotePort} — inviting data port ${remotePort + 1}`);
-      debug('control handshake OK, inviting data port');
-      dataSocket.send(buildInvite(), remotePort + 1, remoteHost);
-      inviteTimer = setTimeout(() => {
-        if (!sessionActive) onBye();
-      }, INVITATION_TIMEOUT_MS);
-    } else if (cmd === CMD_CK) {
-      handleCk(buf, controlSocket, remotePort);
-    } else if (cmd === CMD_BY) {
-      onBye();
-    }
-  }
-
-  function onDataMsg(buf) {
-    if (isAppleMidi(buf)) {
-      const cmd = buf.readUInt16BE(2);
-      debug('data ← Apple MIDI cmd 0x%s', cmd.toString(16).toUpperCase());
-      if (cmd === CMD_OK && !dataReady) {
-        clearTimeout(inviteTimer);
-        dataReady = true;
-        sessionActive = true;
-        startCkKeepalive();
-        console.log(`[xtouch] RTP-MIDI session established with ${remoteHost}:${remotePort}`);
-        debug('session active with %s:%d', remoteHost, remotePort);
-        emitter.emit('ready');
-      } else if (cmd === CMD_CK) {
-        handleCk(buf, dataSocket, remotePort + 1);
-      } else if (cmd === CMD_BY) {
-        onBye();
-      }
-      return;
-    }
-    // RTP-MIDI
-    if (buf.length < 13) return;
-    parseMidiSection(buf.slice(12));
-  }
-
-  function handleCk(buf, socket, destPort) {
+  function handleCk(buf, socket, destAddr, destPort) {
     if (buf.length < 36) return;
     const remoteSsrc = buf.readUInt32BE(4);
     const count      = buf.readUInt8(8);
@@ -175,7 +123,57 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
     } catch {
       ts1 = 0n; ts2 = 0n;
     }
-    socket.send(buildCkReply(remoteSsrc, count, ts1, ts2), destPort, remoteHost);
+    debug('CK count=%d → replying count=%d', count, count + 1);
+    socket.send(buildCkReply(remoteSsrc, count, ts1, ts2), destPort, destAddr);
+  }
+
+  function onControlMsg(buf, rinfo) {
+    if (!isAppleMidi(buf)) return;
+    const cmd = buf.readUInt16BE(2);
+    debug('control ← 0x%s from %s:%d', cmd.toString(16).toUpperCase(), rinfo.address, rinfo.port);
+
+    if (cmd === CMD_IN) {
+      if (buf.length < 16) return;
+      const token    = buf.readUInt32BE(8);
+      remoteAddr     = rinfo.address;
+      remoteCtrlPort = rinfo.port;
+      controlAccepted = true;
+      console.log(`[xtouch] Apple MIDI invitation from ${rinfo.address}:${rinfo.port} — sending OK`);
+      controlSocket.send(buildOk(token), rinfo.port, rinfo.address);
+    } else if (cmd === CMD_CK) {
+      handleCk(buf, controlSocket, rinfo.address, rinfo.port);
+    } else if (cmd === CMD_BY) {
+      onSessionEnd();
+    }
+  }
+
+  function onDataMsg(buf, rinfo) {
+    if (isAppleMidi(buf)) {
+      const cmd = buf.readUInt16BE(2);
+      debug('data ← Apple MIDI 0x%s from %s:%d', cmd.toString(16).toUpperCase(), rinfo.address, rinfo.port);
+
+      if (cmd === CMD_IN && controlAccepted) {
+        if (buf.length < 16) return;
+        const token    = buf.readUInt32BE(8);
+        remoteDataPort = rinfo.port;
+        dataSocket.send(buildOk(token), rinfo.port, rinfo.address);
+        if (!sessionActive) {
+          sessionActive = true;
+          startCkKeepalive();
+          console.log(`[xtouch] RTP-MIDI session established with ${rinfo.address}`);
+          emitter.emit('ready', { host: rinfo.address });
+        }
+      } else if (cmd === CMD_CK) {
+        handleCk(buf, dataSocket, rinfo.address, rinfo.port);
+      } else if (cmd === CMD_BY) {
+        onSessionEnd();
+      }
+      return;
+    }
+
+    // RTP-MIDI data packet
+    if (buf.length < 13) return;
+    parseMidiSection(buf.slice(12));
   }
 
   function parseMidiSection(buf) {
@@ -230,7 +228,7 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
   function startCkKeepalive() {
     clearInterval(ckTimer);
     ckTimer = setInterval(() => {
-      if (!sessionActive || !dataSocket) return;
+      if (!sessionActive || !dataSocket || !remoteAddr || !remoteDataPort) return;
       const buf = Buffer.alloc(36);
       buf.writeUInt16BE(APPLEMIDI_SIG, 0);
       buf.writeUInt16BE(CMD_CK, 2);
@@ -240,74 +238,28 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
       buf.writeBigUInt64BE(BigInt(Date.now()) * 10n, 12);
       buf.writeBigUInt64BE(0n, 20);
       buf.writeBigUInt64BE(0n, 28);
-      dataSocket.send(buf, remotePort + 1, remoteHost);
+      dataSocket.send(buf, remoteDataPort, remoteAddr);
     }, CK_INTERVAL_MS);
   }
 
-  function onBye() {
-    if (destroyed) return;
-    const wasActive = sessionActive;
-    console.log(`[xtouch] ${wasActive ? 'Session ended' : 'Invitation timed out'} — reconnecting in ${RECONNECT_DELAY_MS / 1000}s`);
-    debug('session ended, reconnecting in %dms', RECONNECT_DELAY_MS);
-    sessionActive = false;
-    controlReady  = false;
-    dataReady     = false;
+  function onSessionEnd() {
+    if (!sessionActive && !controlAccepted) return;
+    console.log(`[xtouch] Session ended from ${remoteAddr} — waiting for new connection`);
+    sessionActive   = false;
+    controlAccepted = false;
+    remoteAddr      = null;
+    remoteCtrlPort  = null;
+    remoteDataPort  = null;
     clearInterval(ckTimer);
     emitter.emit('disconnected');
-    reconnectTimer = setTimeout(start, RECONNECT_DELAY_MS);
-  }
-
-  function closeSockets() {
-    clearTimeout(inviteTimer);
-    clearTimeout(reconnectTimer);
-    clearInterval(ckTimer);
-    try { controlSocket?.close(); } catch {}
-    try { dataSocket?.close();    } catch {}
-    controlSocket = null;
-    dataSocket    = null;
+    // Server mode: no reconnect logic — we simply wait for the next IN packet
   }
 
   // ── public API ─────────────────────────────────────────────────────────────
 
-  function start() {
-    if (destroyed) return;
-    closeSockets();
-
-    ssrc  = rand32();
-    token = rand32();
-    sessionActive = false;
-    controlReady  = false;
-    dataReady     = false;
-
-    controlSocket = dgram.createSocket('udp4');
-    dataSocket    = dgram.createSocket('udp4');
-
-    controlSocket.on('message', onControlMsg);
-    dataSocket.on('message',    onDataMsg);
-    controlSocket.on('error', (err) => {
-      console.error(`[xtouch] Control socket error: ${err.message}`);
-      if (!destroyed) emitter.emit('error', err);
-    });
-    dataSocket.on('error', (err) => {
-      console.error(`[xtouch] Data socket error: ${err.message}`);
-      if (!destroyed) emitter.emit('error', err);
-    });
-
-    controlSocket.bind(localPort, () => {
-      dataSocket.bind(localPort + 1, () => {
-        console.log(`[xtouch] Sending Apple MIDI invitation → ${remoteHost}:${remotePort} (local control=${localPort} data=${localPort + 1})`);
-        debug('bound control=%d data=%d → %s:%d', localPort, localPort + 1, remoteHost, remotePort);
-        controlSocket.send(buildInvite(), remotePort, remoteHost);
-        inviteTimer = setTimeout(() => {
-          if (!sessionActive) onBye();
-        }, INVITATION_TIMEOUT_MS);
-      });
-    });
-  }
-
   function sendMidi(bytes) {
-    if (!sessionActive || !dataSocket) return;
-    dataSocket.send(buildRtpMidi(bytes), remotePort + 1, remoteHost);
+    if (!sessionActive || !dataSocket || !remoteAddr || !remoteDataPort) return;
+    dataSocket.send(buildRtpMidi(bytes), remoteDataPort, remoteAddr);
   }
 
   function sendNoteOn(channel, note, velocity) {
@@ -319,12 +271,11 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
   }
 
   function sendPitchBend(channel, value) {
-    // value: 0–16383 (14-bit)
+    // value: 0–16383 (14-bit), encoded as LSB/MSB
     sendMidi([0xe0 | (channel & 0x0f), value & 0x7f, (value >> 7) & 0x7f]);
   }
 
   function sendSysex(bytes) {
-    // Accept Buffer or Array, with or without F0/F7 wrapper
     const arr = Array.from(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
     if (arr[0] !== 0xf0) {
       sendMidi([0xf0, ...arr, 0xf7]);
@@ -333,12 +284,39 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
     }
   }
 
+  function start() {
+    if (destroyed) return;
+
+    controlSocket = dgram.createSocket('udp4');
+    dataSocket    = dgram.createSocket('udp4');
+
+    controlSocket.on('message', onControlMsg);
+    dataSocket.on('message',    onDataMsg);
+
+    controlSocket.on('error', (err) => {
+      console.error(`[xtouch] Control socket error: ${err.message}`);
+      if (!destroyed) emitter.emit('error', err);
+    });
+    dataSocket.on('error', (err) => {
+      console.error(`[xtouch] Data socket error: ${err.message}`);
+      if (!destroyed) emitter.emit('error', err);
+    });
+
+    controlSocket.bind(localPort, () => {
+      dataSocket.bind(localPort + 1, () => {
+        console.log(`[xtouch] Apple MIDI server listening on UDP :${localPort} (control) / :${localPort + 1} (data)`);
+        console.log(`[xtouch] Point your X-Touch network destination to this server's IP on port ${localPort}`);
+      });
+    });
+  }
+
   function destroy() {
     destroyed = true;
-    if (sessionActive) {
-      try { controlSocket?.send(buildBye(), remotePort, remoteHost); } catch {}
-    }
-    closeSockets();
+    clearInterval(ckTimer);
+    try { controlSocket?.close(); } catch {}
+    try { dataSocket?.close();    } catch {}
+    controlSocket = null;
+    dataSocket    = null;
   }
 
   return { start, sendNoteOn, sendNoteOff, sendPitchBend, sendSysex, destroy, emitter };

@@ -92,7 +92,7 @@ export const useMixerStore = create((set) => ({
   },
 
   xtouchConnected: false,
-  xtouchInfo: { host: '', port: 5004 },
+  xtouchInfo: { localPort: 5004, connectedHost: null },
 
   setConnected: (connected) => set({ connected }),
 

@@ -105,18 +105,6 @@ export function useSCM820() {
     }
   }, []);
 
-  const updateXtouchHost = useCallback(async (host, port) => {
-    try {
-      const resp = await fetch(`${API_URL}/api/xtouch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, port }),
-      });
-      return resp.ok;
-    } catch {
-      return false;
-    }
-  }, []);
 
   useEffect(() => {
     let ws;
@@ -233,15 +221,16 @@ export function useSCM820() {
 
           case 'XTOUCH_CONNECTED':
             setXtouchConnected(true);
-            if (msg.host !== undefined) setXtouchInfo({ host: msg.host });
+            if (msg.host !== undefined) setXtouchInfo({ connectedHost: msg.host });
             break;
 
           case 'XTOUCH_DISCONNECTED':
             setXtouchConnected(false);
+            setXtouchInfo({ connectedHost: null });
             break;
 
           case 'XTOUCH_CONFIG':
-            setXtouchInfo({ host: msg.host ?? '', port: msg.port ?? 5004 });
+            setXtouchInfo({ localPort: msg.localPort ?? 5004 });
             setXtouchConnected(msg.connected ?? false);
             break;
         }
@@ -258,5 +247,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo, setXtouchConnected, setXtouchInfo]);
 
-  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchHost, loadingProgress };
+  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
 }

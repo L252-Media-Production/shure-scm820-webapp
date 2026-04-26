@@ -33,16 +33,12 @@ function SegBtn({ active, onClick, children }) {
   );
 }
 
-function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, onXtouchSave }) {
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected }) {
   const [host, setHost] = useState(deviceInfo.host || '');
   const [expanded, setExpanded] = useState(false);
   const [lastActiveRate, setLastActiveRate] = useState(1000);
-  const [xtouchHost, setXtouchHost] = useState(xtouchInfo.host || '');
-  const [xtouchPort, setXtouchPort] = useState(String(xtouchInfo.port || 5004));
 
   useEffect(() => { setHost(deviceInfo.host || ''); }, [deviceInfo.host]);
-  useEffect(() => { setXtouchHost(xtouchInfo.host || ''); }, [xtouchInfo.host]);
-  useEffect(() => { setXtouchPort(String(xtouchInfo.port || 5004)); }, [xtouchInfo.port]);
 
   const meterRateMs = parseInt(deviceInfo.meterRate, 10);
   const meterEnabled = !isNaN(meterRateMs) && meterRateMs > 0;
@@ -225,7 +221,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
         </form>
       </div>
 
-      {/* X-Touch IP */}
+      {/* X-Touch status */}
       <div className="border-t border-zinc-700 pt-3 mt-1">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Behringer X-Touch</div>
@@ -236,40 +232,23 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
             </span>
           </div>
         </div>
-        <form
-          onSubmit={(e) => { e.preventDefault(); if (xtouchHost.trim()) onXtouchSave(xtouchHost.trim(), parseInt(xtouchPort, 10) || 5004); }}
-          className="flex gap-2"
-        >
-          <input
-            type="text"
-            value={xtouchHost}
-            onChange={(e) => setXtouchHost(e.target.value)}
-            placeholder="192.168.1.x"
-            spellCheck={false}
-            className="flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-1.5 text-sm text-zinc-200 font-mono focus:outline-none focus:border-blue-500"
-          />
-          <input
-            type="text"
-            value={xtouchPort}
-            onChange={(e) => setXtouchPort(e.target.value)}
-            placeholder="5004"
-            className="w-16 bg-zinc-900 border border-zinc-600 rounded px-2 py-1.5 text-sm text-zinc-200 font-mono focus:outline-none focus:border-blue-500"
-          />
-          <button
-            type="submit"
-            disabled={!xtouchHost.trim()}
-            className="px-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-bold rounded transition-colors"
-          >
-            Connect
-          </button>
-        </form>
+        <div className="text-xs text-zinc-400 font-mono">
+          {xtouchConnected
+            ? `Connected from ${xtouchInfo.connectedHost}`
+            : `Awaiting connection on :${xtouchInfo.localPort} / :${xtouchInfo.localPort + 1}`}
+        </div>
+        {!xtouchConnected && (
+          <div className="text-[10px] text-zinc-600 mt-1">
+            Set your X-Touch to MC slave mode and point it at this server's IP.
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default function App() {
-  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchHost, loadingProgress } = useSCM820();
+  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
   const xtouchConnected = useMixerStore((s) => s.xtouchConnected);
@@ -300,10 +279,6 @@ export default function App() {
     await updateDeviceHost(host);
     setShowPopover(false);
     setShowModal(false);
-  }
-
-  async function handleXtouchSave(host, port) {
-    await updateXtouchHost(host, port);
   }
 
   return (
@@ -355,7 +330,6 @@ export default function App() {
                 onHostChange={handleHostChange}
                 xtouchInfo={xtouchInfo}
                 xtouchConnected={xtouchConnected}
-                onXtouchSave={handleXtouchSave}
               />
             </>
           )}
