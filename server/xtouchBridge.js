@@ -6,14 +6,17 @@
  *
  * MCU note assignments (MIDI channel 0, 0-indexed):
  *   notes  0-7   → REC ARM buttons  (strips 1-8) → phantom power toggle
- *   notes  8-15  → SOLO buttons     (strips 1-8) → input source toggle
- *   notes 16-23  → MUTE buttons     (strips 1-8) → mute both mixes
+ *   notes  8-15  → SOLO buttons     (strips 1-8) → input source toggle (Analog ↔ Network)
+ *   notes 16-23  → MUTE buttons     (strips 1-8) → mute toggle
+ *   notes 24-31  → SELECT buttons   (strips 1-8) → mic sensitivity cycle (Line / +26dB / +46dB)
  *
  * MCU pitch bend:
  *   MIDI ch 0-7  → strip faders 1-8 → AUDIO_GAIN_HI_RES ch 1-8
  *   MIDI ch 8    → master fader     → AUDIO_GAIN_HI_RES ch 18 + 19
  *
- * Gain ↔ fader:  linear map over 0–1280 raw ↔ 0–16383 (14-bit)
+ * Scribble strip (per channel):
+ *   Line 1 (top):    channel name from SCM820
+ *   Line 2 (bottom): last-touched status — dB value, MUTED/UNMUTED, or mic level
  */
 
 import { createRtpMidiServer } from './rtpmidiClient.js';
@@ -36,9 +39,18 @@ const ECHO_SUPPRESS_MS = 600;
 const NOTE_REC    = 0;
 const NOTE_SOLO   = 8;
 const NOTE_MUTE   = 16;
+const NOTE_SELECT = 24;
 
 const LED_ON  = 127;
 const LED_OFF = 0;
+
+// Mic sensitivity cycling order and display labels (7 chars each for scribble strip)
+const MIC_LEVELS = ['LINE_LVL', 'MIC_LVL_26DB', 'MIC_LVL_46DB'];
+const MIC_LEVEL_LABELS = {
+  LINE_LVL:     'LINE   ',
+  MIC_LVL_26DB: '+26 dB ',
+  MIC_LVL_46DB: '+46 dB ',
+};
 
 // Two-segment linear map anchored at 0 dB so both devices agree on unity.
 // Below 0 dB: [0, FADER_UNITY] ↔ [0, GAIN_UNITY]
@@ -63,10 +75,19 @@ function faderToGain(fader) {
   );
 }
 
-function scribbleSysex(stripIndex, name) {
-  // X-Touch scribble strip (MCU-compatible): F0 00 00 66 14 12 [offset] [7 chars] F7
-  const offset = stripIndex * 7;
-  const chars  = name.padEnd(7, ' ').slice(0, 7);
+// Format a raw SCM820 gain value as a 7-char dB string for the scribble strip.
+function gainToDb(gain) {
+  if (gain <= 0) return '-inf dB';
+  const db = (gain - GAIN_UNITY) / 10;
+  const s  = (db >= 0 ? '+' : '') + db.toFixed(1) + 'dB';
+  return s.slice(0, 7).padEnd(7, ' ');
+}
+
+// X-Touch scribble strip (MCU-compatible): F0 00 00 66 14 12 [offset] [7 chars] F7
+// line 0 = top row (name), line 1 = bottom row (status). Each strip gets 7 chars.
+function scribbleSysex(stripIndex, text, line = 0) {
+  const offset = (line === 0 ? 0 : 56) + stripIndex * 7;
+  const chars  = text.padEnd(7, ' ').slice(0, 7);
   const bytes  = [0xf0, 0x00, 0x00, 0x66, 0x14, 0x12, offset];
   for (let i = 0; i < 7; i++) bytes.push(chars.charCodeAt(i) & 0x7f);
   bytes.push(0xf7);
@@ -74,12 +95,12 @@ function scribbleSysex(stripIndex, name) {
 }
 
 function defaultChannelState() {
-  return { name: '', gain: 1100, mute: false, phantomPower: false, inputSource: 'Analog' };
+  return { name: '', gain: 1100, mute: false, phantomPower: false, inputSource: 'Analog', micLevel: 'LINE_LVL' };
 }
 
 /**
  * @param {number} localPort     Local UDP control port to listen on (default 5004); data = localPort + 1
- * @returns {{ applyRep, destroy, connected, emitter }}
+ * @returns {{ applyRep, applyMeter, destroy, connected, emitter }}
  *
  * The X-Touch in MC master mode acts as the Apple MIDI initiator — it sends
  * IN packets to our server. We listen on localPort and accept the session.
@@ -95,6 +116,10 @@ export function createXtouchBridge(localPort = 5004) {
   // Timestamps of last X-Touch fader touch per strip (0-7) or 'master'
   const faderTouchedAt = new Map();
 
+  // Last control interacted with per channel strip — drives scribble line 2 content.
+  // Values: 'fader' | 'mute' | 'select' | null
+  const lastTouched = new Array(8).fill(null);
+
   let connected = false;
 
   const midi = createRtpMidiServer(localPort);
@@ -107,8 +132,10 @@ export function createXtouchBridge(localPort = 5004) {
       const gain     = faderToGain(value);
       faderTouchedAt.set(channel, Date.now());
       channels[channel].gain = gain;
+      lastTouched[channel]   = 'fader';
       debug('fader ch%d → gain %d', scm820Ch, gain);
       console.log(`[xtouch] Fader ch${scm820Ch} moved → AUDIO_GAIN_HI_RES ${gain}`);
+      midi.sendSysex(scribbleSysex(channel, gainToDb(gain), 1));
       emitter.emit('command', { type: 'SET', channel: scm820Ch, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
     } else if (channel === 8) {
       const gain = faderToGain(value);
@@ -138,6 +165,7 @@ export function createXtouchBridge(localPort = 5004) {
       } else {
         console.log(`[xtouch] REC ch${scm820} pressed — ignored (input source is Network)`);
       }
+
     } else if (note >= NOTE_SOLO && note < NOTE_SOLO + 8) {
       // SOLO: toggle input source Analog ↔ Network
       const idx       = note - NOTE_SOLO;
@@ -147,17 +175,37 @@ export function createXtouchBridge(localPort = 5004) {
       const next      = toNetwork ? 'Network' : 'Analog';
       debug('solo ch%d source %s', scm820, next);
       console.log(`[xtouch] SOLO ch${scm820} pressed → INPUT_AUDIO_SOURCE ${next}`);
-      // Optimistic LED update — applyRep will confirm/correct when SCM820 replies
+      // Optimistic LED — applyRep will confirm/correct when SCM820 replies
       state.inputSource = toNetwork ? 'Network' : 'Analog';
       midi.sendNoteOn(0, NOTE_SOLO + idx, toNetwork ? LED_ON : LED_OFF);
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'INPUT_AUDIO_SOURCE', value: next });
+
     } else if (note >= NOTE_MUTE && note < NOTE_MUTE + 8) {
-      // MUTE: toggle mute on both mixes
-      const idx    = note - NOTE_MUTE;
-      const scm820 = idx + 1;
+      // MUTE: toggle mute; update scribble line 2 immediately with predicted state
+      const idx      = note - NOTE_MUTE;
+      const scm820   = idx + 1;
+      const willMute = !channels[idx].mute;
+      lastTouched[idx] = 'mute';
       debug('mute ch%d TOGGLE', scm820);
       console.log(`[xtouch] MUTE ch${scm820} pressed → AUDIO_MUTE TOGGLE`);
+      midi.sendSysex(scribbleSysex(idx, willMute ? 'MUTED  ' : 'UNMUTED', 1));
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_MUTE', value: 'TOGGLE' });
+
+    } else if (note >= NOTE_SELECT && note < NOTE_SELECT + 8) {
+      // SELECT: cycle mic sensitivity LINE_LVL → MIC_LVL_26DB → MIC_LVL_46DB → …
+      const idx      = note - NOTE_SELECT;
+      const scm820   = idx + 1;
+      const state    = channels[idx];
+      const curIdx   = MIC_LEVELS.indexOf(state.micLevel);
+      const next     = MIC_LEVELS[(curIdx + 1) % MIC_LEVELS.length];
+      lastTouched[idx] = 'select';
+      debug('select ch%d micLevel %s', scm820, next);
+      console.log(`[xtouch] SELECT ch${scm820} pressed → AUDIO_IN_LVL_SWITCH ${next}`);
+      // Optimistic update — applyRep will confirm/correct
+      state.micLevel = next;
+      midi.sendNoteOn(0, NOTE_SELECT + idx, next !== 'LINE_LVL' ? LED_ON : LED_OFF);
+      midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[next], 1));
+      emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_IN_LVL_SWITCH', value: next });
     }
   });
 
@@ -176,12 +224,18 @@ export function createXtouchBridge(localPort = 5004) {
           if (!touchedAt || Date.now() - touchedAt > ECHO_SUPPRESS_MS) {
             midi.sendPitchBend(idx, gainToFader(gain));
           }
+          if (lastTouched[idx] === 'fader') {
+            midi.sendSysex(scribbleSysex(idx, gainToDb(gain), 1));
+          }
           break;
         }
         case 'AUDIO_MUTE': {
           const muted = value === 'ON';
           channels[idx].mute = muted;
           midi.sendNoteOn(0, NOTE_MUTE + idx, muted ? LED_ON : LED_OFF);
+          if (lastTouched[idx] === 'mute') {
+            midi.sendSysex(scribbleSysex(idx, muted ? 'MUTED  ' : 'UNMUTED', 1));
+          }
           break;
         }
         case 'PHANTOM_PWR_ENABLE': {
@@ -197,10 +251,22 @@ export function createXtouchBridge(localPort = 5004) {
           midi.sendNoteOn(0, NOTE_SOLO + idx, isNetwork ? LED_ON : LED_OFF);
           break;
         }
+        case 'AUDIO_IN_LVL_SWITCH': {
+          const raw   = value.replace(/^\{|\}$/g, '').trim().toUpperCase();
+          const level = raw === 'MIC_LVL_26DB' ? 'MIC_LVL_26DB'
+                      : raw === 'MIC_LVL_46DB' ? 'MIC_LVL_46DB'
+                      : 'LINE_LVL';
+          channels[idx].micLevel = level;
+          midi.sendNoteOn(0, NOTE_SELECT + idx, level !== 'LINE_LVL' ? LED_ON : LED_OFF);
+          if (lastTouched[idx] === 'select') {
+            midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[level], 1));
+          }
+          break;
+        }
         case 'CHAN_NAME': {
           const name = value.replace(/^\{|\}$/g, '').trim();
           channels[idx].name = name;
-          midi.sendSysex(scribbleSysex(idx, name));
+          midi.sendSysex(scribbleSysex(idx, name, 0));
           break;
         }
       }
@@ -236,12 +302,24 @@ export function createXtouchBridge(localPort = 5004) {
 
   function pushFullState() {
     for (let idx = 0; idx < 8; idx++) {
-      const s = channels[idx];
+      const s  = channels[idx];
+      const lt = lastTouched[idx];
       midi.sendPitchBend(idx, gainToFader(s.gain));
-      midi.sendNoteOn(0, NOTE_MUTE + idx, s.mute        ? LED_ON : LED_OFF);
-      midi.sendNoteOn(0, NOTE_REC  + idx, s.phantomPower ? LED_ON : LED_OFF);
-      midi.sendNoteOn(0, NOTE_SOLO + idx, s.inputSource === 'Network' ? LED_ON : LED_OFF);
-      if (s.name) midi.sendSysex(scribbleSysex(idx, s.name));
+      midi.sendNoteOn(0, NOTE_MUTE   + idx, s.mute                      ? LED_ON : LED_OFF);
+      midi.sendNoteOn(0, NOTE_REC    + idx, s.phantomPower               ? LED_ON : LED_OFF);
+      midi.sendNoteOn(0, NOTE_SOLO   + idx, s.inputSource === 'Network'  ? LED_ON : LED_OFF);
+      midi.sendNoteOn(0, NOTE_SELECT + idx, s.micLevel    !== 'LINE_LVL' ? LED_ON : LED_OFF);
+      if (s.name) midi.sendSysex(scribbleSysex(idx, s.name, 0));
+      // Restore line 2 based on last interaction, or clear it
+      if (lt === 'fader') {
+        midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
+      } else if (lt === 'mute') {
+        midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
+      } else if (lt === 'select') {
+        midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
+      } else {
+        midi.sendSysex(scribbleSysex(idx, '       ', 1));
+      }
     }
     // Master fader: use ch18 gain
     midi.sendPitchBend(8, gainToFader(master[0].gain));
