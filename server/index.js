@@ -68,10 +68,15 @@ let xtouchBridge = null;
 
 function startXtouchBridge() {
   if (xtouchBridge) {
+    console.log('[server] Destroying existing X-Touch bridge');
     xtouchBridge.destroy();
     xtouchBridge = null;
   }
-  if (!xtouchConfig.host) return;
+  if (!xtouchConfig.host) {
+    console.log('[server] No X-Touch host configured — skipping bridge start');
+    return;
+  }
+  console.log(`[server] Starting X-Touch bridge → ${xtouchConfig.host}:${xtouchConfig.port}`);
 
   xtouchBridge = createXtouchBridge(xtouchConfig.host, xtouchConfig.port);
 

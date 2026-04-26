@@ -61,7 +61,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
   }
 
   return (
-    <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
+    <div className="absolute right-0 top-full mt-2 w-96 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
 
       {/* Always-visible summary */}
       <div className="space-y-1.5 mb-3 text-xs">
@@ -260,7 +260,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
             disabled={!xtouchHost.trim()}
             className="px-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-bold rounded transition-colors"
           >
-            Save
+            Connect
           </button>
         </form>
       </div>

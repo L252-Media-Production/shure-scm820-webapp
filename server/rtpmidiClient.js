@@ -126,6 +126,7 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
     if (cmd === CMD_OK && !controlReady) {
       clearTimeout(inviteTimer);
       controlReady = true;
+      console.log(`[xtouch] Control handshake OK from ${remoteHost}:${remotePort} — inviting data port ${remotePort + 1}`);
       debug('control handshake OK, inviting data port');
       dataSocket.send(buildInvite(), remotePort + 1, remoteHost);
       inviteTimer = setTimeout(() => {
@@ -147,6 +148,7 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
         dataReady = true;
         sessionActive = true;
         startCkKeepalive();
+        console.log(`[xtouch] RTP-MIDI session established with ${remoteHost}:${remotePort}`);
         debug('session active with %s:%d', remoteHost, remotePort);
         emitter.emit('ready');
       } else if (cmd === CMD_CK) {
@@ -244,6 +246,8 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
 
   function onBye() {
     if (destroyed) return;
+    const wasActive = sessionActive;
+    console.log(`[xtouch] ${wasActive ? 'Session ended' : 'Invitation timed out'} — reconnecting in ${RECONNECT_DELAY_MS / 1000}s`);
     debug('session ended, reconnecting in %dms', RECONNECT_DELAY_MS);
     sessionActive = false;
     controlReady  = false;
@@ -280,11 +284,18 @@ export function createRtpMidiClient(remoteHost, remotePort = 5004, localPort = 5
 
     controlSocket.on('message', onControlMsg);
     dataSocket.on('message',    onDataMsg);
-    controlSocket.on('error', (err) => { if (!destroyed) emitter.emit('error', err); });
-    dataSocket.on('error',    (err) => { if (!destroyed) emitter.emit('error', err); });
+    controlSocket.on('error', (err) => {
+      console.error(`[xtouch] Control socket error: ${err.message}`);
+      if (!destroyed) emitter.emit('error', err);
+    });
+    dataSocket.on('error', (err) => {
+      console.error(`[xtouch] Data socket error: ${err.message}`);
+      if (!destroyed) emitter.emit('error', err);
+    });
 
     controlSocket.bind(localPort, () => {
       dataSocket.bind(localPort + 1, () => {
+        console.log(`[xtouch] Sending Apple MIDI invitation → ${remoteHost}:${remotePort} (local control=${localPort} data=${localPort + 1})`);
         debug('bound control=%d data=%d → %s:%d', localPort, localPort + 1, remoteHost, remotePort);
         controlSocket.send(buildInvite(), remotePort, remoteHost);
         inviteTimer = setTimeout(() => {

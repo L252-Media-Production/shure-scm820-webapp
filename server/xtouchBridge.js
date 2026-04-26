@@ -89,6 +89,7 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
       faderTouchedAt.set(channel, Date.now());
       channels[channel].gain = gain;
       debug('fader ch%d → gain %d', scm820Ch, gain);
+      console.log(`[xtouch] Fader ch${scm820Ch} moved → AUDIO_GAIN_HI_RES ${gain}`);
       emitter.emit('command', { type: 'SET', channel: scm820Ch, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
     } else if (channel === 8) {
       const gain = faderToGain(value);
@@ -96,6 +97,7 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
       master[0].gain = gain;
       master[1].gain = gain;
       debug('master fader → gain %d (ch18+19)', gain);
+      console.log(`[xtouch] Master fader moved → AUDIO_GAIN_HI_RES ${gain} (ch18+19)`);
       emitter.emit('command', { type: 'SET', channel: 18, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
       emitter.emit('command', { type: 'SET', channel: 19, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
     }
@@ -112,7 +114,10 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
       if (state.inputSource !== 'Network') {
         const next = state.phantomPower ? 'OFF' : 'ON';
         debug('rec ch%d phantom %s', scm820, next);
+        console.log(`[xtouch] REC ch${scm820} pressed → PHANTOM_PWR_ENABLE ${next}`);
         emitter.emit('command', { type: 'SET', channel: scm820, param: 'PHANTOM_PWR_ENABLE', value: next });
+      } else {
+        console.log(`[xtouch] REC ch${scm820} pressed — ignored (input source is Network)`);
       }
     } else if (note >= NOTE_SOLO && note < NOTE_SOLO + 8) {
       // SOLO: toggle input source Analog ↔ DANTE
@@ -121,12 +126,14 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
       const state  = channels[idx];
       const next   = state.inputSource === 'Network' ? 'Analog' : 'DANTE';
       debug('solo ch%d source %s', scm820, next);
+      console.log(`[xtouch] SOLO ch${scm820} pressed → INPUT_AUDIO_SOURCE ${next}`);
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'INPUT_AUDIO_SOURCE', value: next });
     } else if (note >= NOTE_MUTE && note < NOTE_MUTE + 8) {
       // MUTE: toggle mute on both mixes
       const idx    = note - NOTE_MUTE;
       const scm820 = idx + 1;
       debug('mute ch%d TOGGLE', scm820);
+      console.log(`[xtouch] MUTE ch${scm820} pressed → AUDIO_MUTE TOGGLE`);
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_MUTE', value: 'TOGGLE' });
     }
   });
@@ -206,6 +213,7 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
 
   midi.emitter.on('ready', () => {
     connected = true;
+    console.log(`[xtouch] X-Touch connected at ${host}:${remotePort} — pushing full state`);
     debug('X-Touch ready at %s:%d', host, remotePort);
     pushFullState();
     emitter.emit('connected');
@@ -213,11 +221,13 @@ export function createXtouchBridge(host, remotePort = 5004, localPort = 5006) {
 
   midi.emitter.on('disconnected', () => {
     connected = false;
+    console.log(`[xtouch] X-Touch disconnected from ${host}:${remotePort}`);
     debug('X-Touch disconnected');
     emitter.emit('disconnected');
   });
 
   midi.emitter.on('error', (err) => {
+    console.error(`[xtouch] RTP-MIDI error: ${err.message}`);
     debug('rtpMidi error: %s', err.message);
   });
 

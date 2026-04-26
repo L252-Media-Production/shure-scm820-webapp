@@ -32,6 +32,7 @@ ENV NODE_ENV=production \
     WS_PORT=8080 \
     WS_HOST=0.0.0.0
 
+# UDP 5006/5007 are used for X-Touch RTP-MIDI (outbound-initiated — Docker NAT handles return traffic)
 EXPOSE 8080
 
 CMD ["node", "server/index.js"]
