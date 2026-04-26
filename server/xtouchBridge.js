@@ -139,12 +139,12 @@ export function createXtouchBridge(localPort = 5004) {
         console.log(`[xtouch] REC ch${scm820} pressed — ignored (input source is Network)`);
       }
     } else if (note >= NOTE_SOLO && note < NOTE_SOLO + 8) {
-      // SOLO: toggle input source Analog ↔ DANTE/Network
+      // SOLO: toggle input source Analog ↔ Network
       const idx       = note - NOTE_SOLO;
       const scm820    = idx + 1;
       const state     = channels[idx];
       const toNetwork = state.inputSource !== 'Network';
-      const next      = toNetwork ? 'DANTE' : 'Analog';
+      const next      = toNetwork ? 'Network' : 'Analog';
       debug('solo ch%d source %s', scm820, next);
       console.log(`[xtouch] SOLO ch${scm820} pressed → INPUT_AUDIO_SOURCE ${next}`);
       // Optimistic LED update — applyRep will confirm/correct when SCM820 replies
