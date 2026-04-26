@@ -138,7 +138,7 @@ Once connected, the status indicator in the browser UI shows **Connected** along
 | **Faders 1–8** | Input channel gain (AUDIO_GAIN_HI_RES ch 1–8) |
 | **Master fader** | Output A + B gain simultaneously (ch 18 + 19) |
 | **REC ARM 1–8** | Toggle 48V phantom power (analog inputs only; ignored if source is Network) |
-| **SOLO 1–8** | Toggle input source between **Analog** and **DANTE/Network** |
+| **SOLO 1–8** | Toggle input source between **Analog** and **Network** |
 | **MUTE 1–8** | Toggle mute on both mixes |
 | **SOLO LED** | Lit when input source is DANTE/Network |
 | **MUTE LED** | Lit when channel is muted |
