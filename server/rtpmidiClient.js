@@ -94,7 +94,7 @@ export function createRtpMidiServer(localPort = 5004) {
     header[0] = 0x80;
     header[1] = RTP_PAYLOAD_TYPE & 0x7f;
     header.writeUInt16BE(seqNum++ & 0xffff, 2);
-    header.writeUInt32BE(Date.now() & 0xffffffff, 4);
+    header.writeUInt32BE((Date.now() & 0xffffffff) >>> 0, 4);
     header.writeUInt32BE(ssrc, 8);
 
     const len    = midiBytes.length;
