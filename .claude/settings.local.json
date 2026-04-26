@@ -5,7 +5,9 @@
       "Bash(USE_MOCK=true timeout 5 node index.js)",
       "Bash(echo \"exit: $?\")",
       "Bash(npm run *)",
-      "Bash(USE_MOCK=true timeout 4 node index.js)"
+      "Bash(USE_MOCK=true timeout 4 node index.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
