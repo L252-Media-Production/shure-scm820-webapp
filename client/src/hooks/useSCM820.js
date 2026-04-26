@@ -43,6 +43,8 @@ export function useSCM820() {
   const applyRep = useMixerStore((s) => s.applyRep);
   const applyDeviceParam = useMixerStore((s) => s.applyDeviceParam);
   const setDeviceInfo = useMixerStore((s) => s.setDeviceInfo);
+  const setXtouchConnected = useMixerStore((s) => s.setXtouchConnected);
+  const setXtouchInfo = useMixerStore((s) => s.setXtouchInfo);
 
   const [loadingProgress, setLoadingProgress] = useState(null);
 
@@ -102,6 +104,7 @@ export function useSCM820() {
       return false;
     }
   }, []);
+
 
   useEffect(() => {
     let ws;
@@ -215,6 +218,21 @@ export function useSCM820() {
           case 'SAMPLE':
             meterLevelsRef.current = msg.levels;
             break;
+
+          case 'XTOUCH_CONNECTED':
+            setXtouchConnected(true);
+            if (msg.host !== undefined) setXtouchInfo({ connectedHost: msg.host });
+            break;
+
+          case 'XTOUCH_DISCONNECTED':
+            setXtouchConnected(false);
+            setXtouchInfo({ connectedHost: null });
+            break;
+
+          case 'XTOUCH_CONFIG':
+            setXtouchInfo({ localPort: msg.localPort ?? 5004 });
+            setXtouchConnected(msg.connected ?? false);
+            break;
         }
       };
     }
@@ -227,7 +245,7 @@ export function useSCM820() {
       clearTimeout(loadingRef.current.timer);
       ws?.close();
     };
-  }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo]);
+  }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo, setXtouchConnected, setXtouchInfo]);
 
   return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
 }

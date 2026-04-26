@@ -33,21 +33,31 @@ function SegBtn({ active, onClick, children }) {
   );
 }
 
-function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected }) {
   const [host, setHost] = useState(deviceInfo.host || '');
   const [expanded, setExpanded] = useState(false);
+  const [lastActiveRate, setLastActiveRate] = useState(1000);
 
   useEffect(() => { setHost(deviceInfo.host || ''); }, [deviceInfo.host]);
+
+  const meterRateMs = parseInt(deviceInfo.meterRate, 10);
+  const meterEnabled = !isNaN(meterRateMs) && meterRateMs > 0;
+
+  useEffect(() => {
+    if (!isNaN(meterRateMs) && meterRateMs > 0) setLastActiveRate(meterRateMs);
+  }, [meterRateMs]);
 
   function handleSubmit(e) {
     e.preventDefault();
     if (host.trim()) onHostChange(host.trim());
   }
 
-  const meterRateMs = parseInt(deviceInfo.meterRate, 10);
+  function toggleMeter() {
+    sendSet(null, 'METER_RATE', meterEnabled ? '00000' : String(lastActiveRate));
+  }
 
   return (
-    <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
+    <div className="absolute right-0 top-full mt-2 w-96 bg-zinc-800 border border-zinc-600 rounded-xl shadow-2xl p-4 z-50 max-h-[85vh] overflow-y-auto">
 
       {/* Always-visible summary */}
       <div className="space-y-1.5 mb-3 text-xs">
@@ -125,10 +135,22 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
 
           {/* Meter Rate */}
           <div className="py-0.5">
-            <div className="flex justify-between items-baseline mb-1">
+            <div className="flex justify-between items-center mb-1">
               <div className="text-zinc-500">Meter Rate</div>
-              <div className="text-zinc-300 font-mono text-[10px]">
-                {isNaN(meterRateMs) ? '—' : `${meterRateMs} ms`}
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-300 font-mono text-[10px]">
+                  {meterEnabled ? `${meterRateMs} ms` : 'OFF'}
+                </span>
+                <button
+                  onClick={toggleMeter}
+                  className={`px-2 py-0.5 text-[9px] font-bold rounded transition-colors ${
+                    meterEnabled
+                      ? 'bg-blue-700 text-white hover:bg-blue-600'
+                      : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+                  }`}
+                >
+                  {meterEnabled ? 'ON' : 'OFF'}
+                </button>
               </div>
             </div>
             <input
@@ -136,9 +158,10 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
               min={100}
               max={2000}
               step={50}
-              value={isNaN(meterRateMs) ? 100 : Math.min(2000, Math.max(100, meterRateMs))}
+              disabled={!meterEnabled}
+              value={meterEnabled ? Math.min(2000, Math.max(100, meterRateMs)) : lastActiveRate}
               onChange={(e) => sendSet(null, 'METER_RATE', e.target.value)}
-              className="w-full accent-blue-500 cursor-pointer"
+              className="w-full accent-blue-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             />
             <div className="flex justify-between text-[9px] text-zinc-600 font-mono mt-0.5">
               <span>100ms</span>
@@ -176,9 +199,9 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
         </div>
       )}
 
-      {/* Change IP */}
+      {/* Change SCM820 IP */}
       <div className="border-t border-zinc-700 pt-3">
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Change IP Address</div>
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Shure SCM820 IP Address</div>
         <form onSubmit={handleSubmit} className="flex gap-2">
           <input
             type="text"
@@ -197,6 +220,29 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange }) {
           </button>
         </form>
       </div>
+
+      {/* X-Touch status */}
+      <div className="border-t border-zinc-700 pt-3 mt-1">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Behringer X-Touch</div>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-1.5 h-1.5 rounded-full ${xtouchConnected ? 'bg-green-400 shadow-[0_0_4px_#4ade80]' : 'bg-zinc-600'}`} />
+            <span className={`text-[10px] font-mono ${xtouchConnected ? 'text-green-400' : 'text-zinc-600'}`}>
+              {xtouchConnected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
+        </div>
+        <div className="text-xs text-zinc-400 font-mono">
+          {xtouchConnected
+            ? `Connected from ${xtouchInfo.connectedHost}`
+            : `Awaiting connection on :${xtouchInfo.localPort} / :${xtouchInfo.localPort + 1}`}
+        </div>
+        {!xtouchConnected && (
+          <div className="text-[10px] text-zinc-600 mt-1">
+            Set your X-Touch to MC slave mode and point it at this server's IP.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -205,6 +251,8 @@ export default function App() {
   const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
+  const xtouchConnected = useMixerStore((s) => s.xtouchConnected);
+  const xtouchInfo = useMixerStore((s) => s.xtouchInfo);
 
   const [showModal, setShowModal] = useState(false);
   const [showPopover, setShowPopover] = useState(false);
@@ -239,6 +287,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest">Shure</span>
           <span className="text-zinc-200 font-bold tracking-wide">SCM820 Virtual Mixer</span>
+          <span className="text-zinc-600 text-xs font-mono">v{__APP_VERSION__}</span>
         </div>
 
         {/* Zoom control */}
@@ -280,6 +329,8 @@ export default function App() {
                 connected={connected}
                 sendSet={sendSet}
                 onHostChange={handleHostChange}
+                xtouchInfo={xtouchInfo}
+                xtouchConnected={xtouchConnected}
               />
             </>
           )}
