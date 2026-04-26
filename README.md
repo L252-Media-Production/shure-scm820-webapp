@@ -162,6 +162,13 @@ The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range 
 
 **Not currently supported.** Apple MIDI is point-to-point — each session requires its own UDP port pair. The server accepts one X-Touch at a time. A second unit would need a second port pair (e.g. 5006/5007) and a second bridge instance. This is architecturally straightforward but not yet implemented.
 
+## Known Issues
+
+| Issue | Details |
+|---|---|
+| **X-Touch fader calibration drift** | The two-segment piecewise linear map anchors at 0 dB and +10 dB, but the X-Touch MCU fader physical response is not perfectly linear. Small discrepancies (±1–2 dB) can appear between the X-Touch fader position and the actual SCM820 gain, particularly in the lower half of the travel. |
+| **AUX input (channel 9) not mapped** | The SCM820 aux input (channel 9) has no corresponding strip on the X-Touch. It is controllable from the web UI only. |
+
 ## Fader Resolution
 
 Each channel strip has a **CRSE / FINE** toggle button beneath the dB readout.
