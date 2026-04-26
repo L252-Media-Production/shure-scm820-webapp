@@ -293,8 +293,9 @@ export function createXtouchBridge(localPort = 5004) {
     if (!connected) return;
     for (let i = 0; i < 8; i++) {
       const sample   = levels[i] ?? 0;
-      const mcuLevel = sample >= 118 ? 13 : Math.round(sample / 120 * 12);
-      midi.sendChannelPressure(i, mcuLevel);
+      const mcuLevel = sample >= 118 ? 14 : Math.round(sample / 120 * 12);
+      // MCU meter format: always 0xD0, data byte = (stripIndex << 4) | level
+      midi.sendChannelPressure(0, (i << 4) | mcuLevel);
     }
   }
 
