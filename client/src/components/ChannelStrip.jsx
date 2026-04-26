@@ -22,6 +22,10 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [eqOpen, setEqOpen] = useState(false);
+  const [editingLoCut, setEditingLoCut] = useState(false);
+  const [draftLoCut, setDraftLoCut] = useState('');
+  const [editingHiShelf, setEditingHiShelf] = useState(false);
+  const [draftHiShelf, setDraftHiShelf] = useState('');
 
   const levelIndex = channelIndex - 1;
   const isAnalog = inputSource === 'Analog';
@@ -119,7 +123,32 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
                   onClick={() => sendSet(channelIndex, 'LOW_CUT_FREQ', String(Math.max(LO_CUT_FREQ_MIN, lowCutFreq - 1)).padStart(3, '0'))}
                   className="w-5 h-5 text-[11px] bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300 flex items-center justify-center shrink-0"
                 >−</button>
-                <span className="flex-1 text-center text-[9px] text-zinc-200 font-mono">{lowCutFreq}Hz</span>
+                {editingLoCut ? (
+                  <input
+                    autoFocus
+                    type="number"
+                    value={draftLoCut}
+                    min={LO_CUT_FREQ_MIN}
+                    max={LO_CUT_FREQ_MAX}
+                    onChange={(e) => setDraftLoCut(e.target.value)}
+                    onBlur={() => {
+                      const v = Math.max(LO_CUT_FREQ_MIN, Math.min(LO_CUT_FREQ_MAX, parseInt(draftLoCut, 10)));
+                      if (!isNaN(v)) sendSet(channelIndex, 'LOW_CUT_FREQ', String(v).padStart(3, '0'));
+                      setEditingLoCut(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setEditingLoCut(false);
+                    }}
+                    className="flex-1 w-0 text-center text-[9px] bg-zinc-900 border border-blue-500 rounded text-zinc-100 focus:outline-none font-mono py-px"
+                  />
+                ) : (
+                  <span
+                    className="flex-1 text-center text-[9px] text-zinc-200 font-mono cursor-pointer hover:text-white hover:underline underline-offset-2"
+                    title="Click to enter value"
+                    onClick={() => { setDraftLoCut(String(lowCutFreq)); setEditingLoCut(true); }}
+                  >{lowCutFreq}Hz</span>
+                )}
                 <button
                   onClick={() => sendSet(channelIndex, 'LOW_CUT_FREQ', String(Math.min(LO_CUT_FREQ_MAX, lowCutFreq + 1)).padStart(3, '0'))}
                   className="w-5 h-5 text-[11px] bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300 flex items-center justify-center shrink-0"
@@ -147,9 +176,37 @@ export const ChannelStrip = memo(function ChannelStrip({ channelIndex, data, sen
                   onClick={() => sendSet(channelIndex, 'HIGH_SHELF_GAIN', String(Math.max(HI_SHELF_GAIN_MIN, hiShelfGain - 1)).padStart(3, '0'))}
                   className="w-5 h-5 text-[11px] bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300 flex items-center justify-center shrink-0"
                 >−</button>
-                <span className="flex-1 text-center text-[9px] text-zinc-200 font-mono">
-                  {hiShelfGain - HI_SHELF_GAIN_UNITY >= 0 ? '+' : ''}{hiShelfGain - HI_SHELF_GAIN_UNITY}dB
-                </span>
+                {editingHiShelf ? (
+                  <input
+                    autoFocus
+                    type="number"
+                    value={draftHiShelf}
+                    min={-HI_SHELF_GAIN_UNITY}
+                    max={HI_SHELF_GAIN_UNITY}
+                    onChange={(e) => setDraftHiShelf(e.target.value)}
+                    onBlur={() => {
+                      const dB = Math.max(-HI_SHELF_GAIN_UNITY, Math.min(HI_SHELF_GAIN_UNITY, parseInt(draftHiShelf, 10)));
+                      if (!isNaN(dB)) {
+                        const raw = dB + HI_SHELF_GAIN_UNITY;
+                        sendSet(channelIndex, 'HIGH_SHELF_GAIN', String(raw).padStart(3, '0'));
+                      }
+                      setEditingHiShelf(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setEditingHiShelf(false);
+                    }}
+                    className="flex-1 w-0 text-center text-[9px] bg-zinc-900 border border-blue-500 rounded text-zinc-100 focus:outline-none font-mono py-px"
+                  />
+                ) : (
+                  <span
+                    className="flex-1 text-center text-[9px] text-zinc-200 font-mono cursor-pointer hover:text-white hover:underline underline-offset-2"
+                    title="Click to enter value (dB)"
+                    onClick={() => { setDraftHiShelf(String(hiShelfGain - HI_SHELF_GAIN_UNITY)); setEditingHiShelf(true); }}
+                  >
+                    {hiShelfGain - HI_SHELF_GAIN_UNITY >= 0 ? '+' : ''}{hiShelfGain - HI_SHELF_GAIN_UNITY}dB
+                  </span>
+                )}
                 <button
                   onClick={() => sendSet(channelIndex, 'HIGH_SHELF_GAIN', String(Math.min(HI_SHELF_GAIN_MAX, hiShelfGain + 1)).padStart(3, '0'))}
                   className="w-5 h-5 text-[11px] bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300 flex items-center justify-center shrink-0"
