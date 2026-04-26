@@ -275,6 +275,10 @@ export function createRtpMidiServer(localPort = 5004) {
     sendMidi([0xe0 | (channel & 0x0f), value & 0x7f, (value >> 7) & 0x7f]);
   }
 
+  function sendChannelPressure(channel, value) {
+    sendMidi([0xd0 | (channel & 0x0f), value & 0x7f]);
+  }
+
   function sendSysex(bytes) {
     const arr = Array.from(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
     if (arr[0] !== 0xf0) {
@@ -319,5 +323,5 @@ export function createRtpMidiServer(localPort = 5004) {
     dataSocket    = null;
   }
 
-  return { start, sendNoteOn, sendNoteOff, sendPitchBend, sendSysex, destroy, emitter };
+  return { start, sendNoteOn, sendNoteOff, sendPitchBend, sendChannelPressure, sendSysex, destroy, emitter };
 }

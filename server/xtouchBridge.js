@@ -139,13 +139,17 @@ export function createXtouchBridge(localPort = 5004) {
         console.log(`[xtouch] REC ch${scm820} pressed — ignored (input source is Network)`);
       }
     } else if (note >= NOTE_SOLO && note < NOTE_SOLO + 8) {
-      // SOLO: toggle input source Analog ↔ DANTE
-      const idx    = note - NOTE_SOLO;
-      const scm820 = idx + 1;
-      const state  = channels[idx];
-      const next   = state.inputSource === 'Network' ? 'Analog' : 'DANTE';
+      // SOLO: toggle input source Analog ↔ DANTE/Network
+      const idx       = note - NOTE_SOLO;
+      const scm820    = idx + 1;
+      const state     = channels[idx];
+      const toNetwork = state.inputSource !== 'Network';
+      const next      = toNetwork ? 'DANTE' : 'Analog';
       debug('solo ch%d source %s', scm820, next);
       console.log(`[xtouch] SOLO ch${scm820} pressed → INPUT_AUDIO_SOURCE ${next}`);
+      // Optimistic LED update — applyRep will confirm/correct when SCM820 replies
+      state.inputSource = toNetwork ? 'Network' : 'Analog';
+      midi.sendNoteOn(0, NOTE_SOLO + idx, toNetwork ? LED_ON : LED_OFF);
       emitter.emit('command', { type: 'SET', channel: scm820, param: 'INPUT_AUDIO_SOURCE', value: next });
     } else if (note >= NOTE_MUTE && note < NOTE_MUTE + 8) {
       // MUTE: toggle mute on both mixes
@@ -187,7 +191,8 @@ export function createXtouchBridge(localPort = 5004) {
           break;
         }
         case 'INPUT_AUDIO_SOURCE': {
-          const isNetwork = /^network|^dante/i.test(value);
+          const cleaned   = value.replace(/^\{|\}$/g, '').trim();
+          const isNetwork = /^(network|dante)/i.test(cleaned);
           channels[idx].inputSource = isNetwork ? 'Network' : 'Analog';
           midi.sendNoteOn(0, NOTE_SOLO + idx, isNetwork ? LED_ON : LED_OFF);
           break;
@@ -210,6 +215,20 @@ export function createXtouchBridge(localPort = 5004) {
           midi.sendPitchBend(8, gainToFader(gain));
         }
       }
+    }
+  }
+
+  // ── SCM820 SAMPLE → X-Touch meters ────────────────────────────────────────
+  // MCU meters: Channel Pressure 0xD0|strip, value = level 0–13
+  // (0=off, 1–12=green segments, 13=clip/red)
+  // SCM820 SAMPLE indices 0–7 map to input channels 1–8.
+
+  function applyMeter(levels) {
+    if (!connected) return;
+    for (let i = 0; i < 8; i++) {
+      const sample   = levels[i] ?? 0;
+      const mcuLevel = sample >= 118 ? 13 : Math.round(sample / 120 * 12);
+      midi.sendChannelPressure(i, mcuLevel);
     }
   }
 
@@ -256,5 +275,5 @@ export function createXtouchBridge(localPort = 5004) {
     midi.destroy();
   }
 
-  return { applyRep, destroy, get connected() { return connected; }, emitter };
+  return { applyRep, applyMeter, destroy, get connected() { return connected; }, emitter };
 }

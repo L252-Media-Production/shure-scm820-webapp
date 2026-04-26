@@ -197,6 +197,7 @@ wss.on('connection', (ws) => {
 
   bridge.emitter.on('sample', (msg) => {
     sendToClient(ws, { type: 'SAMPLE', levels: msg.levels });
+    xtouchBridge?.applyMeter(msg.levels);
   });
 
   bridge.emitter.on('error', (err) => {
