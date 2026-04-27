@@ -51,9 +51,6 @@ const deviceConfig = {
 
 const XTOUCH_LOCAL_PORT = parseInt(process.env.XTOUCH_PORT, 10) || 5004;
 
-// All active SCM820 bridges (one per WS client) — used to forward X-Touch commands
-const activeBridges = new Set();
-
 // Last known value per "channel:param" key — used to sync X-Touch on (re)connect
 const deviceStateCache = new Map();
 
@@ -87,9 +84,7 @@ function startXtouchBridge() {
   });
 
   xtouchBridge.emitter.on('command', ({ type, channel, param, value }) => {
-    for (const bridge of activeBridges) {
-      if (type === 'SET') bridge.sendSet(channel, param, value);
-    }
+    if (type === 'SET') sharedBridge.sendSet(channel, param, value);
   });
 }
 
@@ -183,57 +178,75 @@ function sendToClient(ws, payload) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
 }
 
+// ── Shared SCM820 bridge — one TCP connection for the server's lifetime ────────
+// Each browser tab or page reload subscribes to this bridge via WebSocket;
+// it never creates its own TCP connection, eliminating TPCI rejection on reload.
+
+let bridgeConnected = false;
+const sharedBridge = createBridge(deviceConfig.host, deviceConfig.port);
+
+sharedBridge.emitter.on('connected', async () => {
+  bridgeConnected = true;
+  debug('Shared bridge connected to SCM820');
+  sharedBridge.sendSet(0, 'METER_RATE', String(METER_RATE_MS));
+  // Notify any WS clients that were waiting for the device to come up
+  const expected = requestInitialState(sharedBridge);
+  broadcastToClients({ type: 'INIT_START', expected });
+  broadcastToClients({ type: 'CONNECTED', host: deviceConfig.host, mac: null });
+  const mac = await lookupMac(deviceConfig.host);
+  debug('MAC: %s', mac);
+  broadcastToClients({ type: 'CONFIG', host: deviceConfig.host, mac });
+});
+
+sharedBridge.emitter.on('disconnected', () => {
+  bridgeConnected = false;
+  broadcastToClients({ type: 'DISCONNECTED' });
+});
+
+sharedBridge.emitter.on('rep', (msg) => {
+  broadcastToClients({ type: 'REP', channel: msg.channel, param: msg.param, value: msg.value });
+  deviceStateCache.set(`${msg.channel}:${msg.param}`, msg.value);
+  xtouchBridge?.applyRep(msg.channel, msg.param, msg.value);
+});
+
+sharedBridge.emitter.on('err', () => {
+  broadcastToClients({ type: 'REP_ERR' });
+});
+
+sharedBridge.emitter.on('sample', (msg) => {
+  broadcastToClients({ type: 'SAMPLE', levels: msg.levels });
+  xtouchBridge?.applyMeter(msg.levels);
+});
+
+sharedBridge.emitter.on('error', (err) => {
+  debug('Bridge error: %s', err.message);
+});
+
+// ── WebSocket client connections ───────────────────────────────────────────────
+
 wss.on('connection', (ws) => {
-  debug('WS client connected — creating dedicated bridge');
-
-  const bridge = createBridge(deviceConfig.host, deviceConfig.port);
-  activeBridges.add(bridge);
-
-  bridge.emitter.on('connected', async () => {
-    debug('Bridge connected for client');
-    const expected = requestInitialState(bridge);
-    bridge.sendSet(0, 'METER_RATE', String(METER_RATE_MS));
-    sendToClient(ws, { type: 'INIT_START', expected });
-    sendToClient(ws, { type: 'CONNECTED', host: deviceConfig.host, mac: null });
-
-    const mac = await lookupMac(deviceConfig.host);
-    debug('MAC: %s', mac);
-    sendToClient(ws, { type: 'CONFIG', host: deviceConfig.host, mac });
-  });
-
-  bridge.emitter.on('disconnected', () => {
-    sendToClient(ws, { type: 'DISCONNECTED' });
-  });
-
-  bridge.emitter.on('rep', (msg) => {
-    sendToClient(ws, { type: 'REP', channel: msg.channel, param: msg.param, value: msg.value });
-    // Cache for X-Touch state sync on (re)connect
-    deviceStateCache.set(`${msg.channel}:${msg.param}`, msg.value);
-    // Forward to X-Touch if it's connected
-    xtouchBridge?.applyRep(msg.channel, msg.param, msg.value);
-  });
-
-  bridge.emitter.on('err', () => {
-    sendToClient(ws, { type: 'REP_ERR' });
-  });
-
-  bridge.emitter.on('sample', (msg) => {
-    sendToClient(ws, { type: 'SAMPLE', levels: msg.levels });
-    xtouchBridge?.applyMeter(msg.levels);
-  });
-
-  bridge.emitter.on('error', (err) => {
-    debug('Bridge error: %s', err.message);
-  });
+  debug('WS client connected');
 
   sendToClient(ws, { type: 'CONFIG', host: deviceConfig.host, mac: null });
-  // Tell the client about X-Touch config and current connection state
   sendToClient(ws, {
     type: 'XTOUCH_CONFIG',
     localPort: XTOUCH_LOCAL_PORT,
     connected: xtouchBridge?.connected ?? false,
     host: xtouchBridge?.connectedHost ?? null,
   });
+
+  // If the shared bridge is already up, kick off initial state fetch for this client.
+  // The resulting REPs are broadcast to all clients; this client's loading tracker
+  // will mark them off as they arrive.
+  if (bridgeConnected) {
+    const expected = requestInitialState(sharedBridge);
+    sendToClient(ws, { type: 'INIT_START', expected });
+    sendToClient(ws, { type: 'CONNECTED', host: deviceConfig.host, mac: null });
+    lookupMac(deviceConfig.host).then((mac) => {
+      debug('MAC: %s', mac);
+      sendToClient(ws, { type: 'CONFIG', host: deviceConfig.host, mac });
+    });
+  }
 
   ws.on('message', (data) => {
     let payload;
@@ -244,20 +257,15 @@ wss.on('connection', (ws) => {
       return;
     }
     if (payload.type === 'SET') {
-      bridge.sendSet(payload.channel, payload.param, payload.value);
+      sharedBridge.sendSet(payload.channel, payload.param, payload.value);
     } else if (payload.type === 'GET') {
-      bridge.sendGet(payload.channel, payload.param);
+      sharedBridge.sendGet(payload.channel, payload.param);
     } else {
       debug('Unknown WS command type: %s', payload.type);
     }
   });
 
-  ws.on('close', () => {
-    activeBridges.delete(bridge);
-    bridge.destroy();
-    debug('WS client disconnected — bridge destroyed');
-  });
-
+  ws.on('close', () => debug('WS client disconnected'));
   ws.on('error', (err) => debug('WS client error: %s', err.message));
 });
 
@@ -299,7 +307,9 @@ async function handleHttpRequest(req, res) {
 
         deviceConfig.host = host.trim();
 
-        // Kick all clients — they'll reconnect via WS auto-reconnect with the new host
+        // Reconnect the shared bridge to the new host, then kick all WS clients so
+        // they re-subscribe and get a fresh INIT_START once the bridge reconnects.
+        sharedBridge.reconnectTo(deviceConfig.host);
         for (const client of wss.clients) {
           client.close(1001, 'Host changed');
         }
@@ -320,6 +330,28 @@ async function handleHttpRequest(req, res) {
       localPort: XTOUCH_LOCAL_PORT,
       connected: xtouchBridge?.connected ?? false,
     }));
+    return;
+  }
+
+  if (req.url === '/api/xtouch' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { auxSwapStrip } = JSON.parse(body);
+        if (typeof auxSwapStrip === 'number' && auxSwapStrip >= 1 && auxSwapStrip <= 8) {
+          xtouchBridge?.setAuxSwapStrip(auxSwapStrip - 1);  // convert to 0-indexed
+          res.writeHead(200, corsHeaders);
+          res.end(JSON.stringify({ ok: true }));
+        } else {
+          res.writeHead(400, corsHeaders);
+          res.end(JSON.stringify({ error: 'auxSwapStrip must be 1-8' }));
+        }
+      } catch {
+        res.writeHead(400, corsHeaders);
+        res.end(JSON.stringify({ error: 'Invalid request body' }));
+      }
+    });
     return;
   }
 

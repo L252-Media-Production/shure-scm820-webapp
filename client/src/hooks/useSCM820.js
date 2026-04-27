@@ -105,6 +105,19 @@ export function useSCM820() {
     }
   }, []);
 
+  const updateXtouchConfig = useCallback(async ({ auxSwapStrip }) => {
+    try {
+      const resp = await fetch(`${API_URL}/api/xtouch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auxSwapStrip }),
+      });
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
 
   useEffect(() => {
     let ws;
@@ -251,5 +264,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo, setXtouchConnected, setXtouchInfo]);
 
-  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress };
+  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, loadingProgress };
 }

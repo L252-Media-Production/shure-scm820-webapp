@@ -13,6 +13,8 @@
  *   note  40     → Encoder Assign: TRACK         → Lo-cut mode
  *   note  42     → Encoder Assign: PAN/SURROUND  → Hi-shelf mode
  *   note  44     → Encoder Assign: EQ            → Fine gain mode
+ *   note  46     → FADER BANK LEFT               → toggle AUX swap mode
+ *   note  47     → FADER BANK RIGHT              → toggle AUX swap mode
  *
  * MCU pitch bend:
  *   MIDI ch 0-7  → strip faders 1-8 → AUDIO_GAIN_HI_RES ch 1-8
@@ -29,10 +31,16 @@
  * Encoder assign modes (one active at a time; press same button again to deactivate):
  *   locut    → V-Pot rotate: LOW_CUT_FREQ (25-320 Hz, 1 Hz/click)
  *              V-Pot push:   LOW_CUT_ENABLE toggle
+ *              Scribble bg:  green if enabled, red if disabled
  *   hishelf  → V-Pot rotate: HIGH_SHELF_GAIN (0-24 = -12 to +12 dB, 1/click)
  *              V-Pot push:   HIGH_SHELF_ENABLE toggle
+ *              Scribble bg:  green if enabled, red if disabled
  *   finegain → V-Pot rotate: AUDIO_GAIN_HI_RES (±1 raw = 0.1 dB/click)
  *              V-Pot push:   (no action)
+ *
+ * AUX bank swap:
+ *   FADER BANK LEFT/RIGHT toggles whether a configurable strip (default 8) shows AUX (ch9).
+ *   Fader and mute for the swapped strip are routed to ch9 when active.
  */
 
 import { createRtpMidiServer } from './rtpmidiClient.js';
@@ -49,11 +57,11 @@ const FADER_MAX   = 16383;
 const FADER_UNITY = 12544;  // X-Touch MCU pitch-bend value at 0 dB (empirically calibrated)
 
 // SCM820 lo-cut and hi-shelf ranges
-const LO_CUT_FREQ_MIN    = 25;
-const LO_CUT_FREQ_MAX    = 320;
+const LO_CUT_FREQ_MIN     = 25;
+const LO_CUT_FREQ_MAX     = 320;
 const LO_CUT_FREQ_DEFAULT = 80;
-const HI_SHELF_GAIN_MIN  = 0;
-const HI_SHELF_GAIN_MAX  = 24;
+const HI_SHELF_GAIN_MIN   = 0;
+const HI_SHELF_GAIN_MAX   = 24;
 const HI_SHELF_GAIN_UNITY = 12;  // raw 12 = 0 dB
 
 // How long after a fader touch to ignore SCM820 feedback (prevents echo loops)
@@ -72,6 +80,10 @@ const NOTE_ASSIGN_PAN   = 42;   // 0x2A → hi-shelf mode
 const NOTE_ASSIGN_EQ    = 44;   // 0x2C → fine gain mode
 const NOTE_FLIP         = 50;   // 0x32 → mute toggle for Mix A (ch18) + Mix B (ch19)
 
+// FADER BANK navigation notes
+const NOTE_BANK_LEFT  = 46;   // 0x2E → toggle AUX swap mode
+const NOTE_BANK_RIGHT = 47;   // 0x2F → toggle AUX swap mode
+
 // V-Pot encoder CC range
 const CC_ENCODER_BASE = 16;     // CC 16-23 = encoders 1-8
 
@@ -85,6 +97,17 @@ const MIC_LEVEL_LABELS = {
   MIC_LVL_26DB: '+26 dB ',
   MIC_LVL_46DB: '+46 dB ',
 };
+
+// X-Touch scribble color byte values (used in color sysex)
+// Bit 6 (0x40) inverts: colored background instead of colored text
+const COLOR_BLACK  = 0x00;
+const COLOR_RED    = 0x41;  // red bg, black text (inverted)
+const COLOR_GREEN  = 0x42;  // green bg, black text (inverted)
+const COLOR_YELLOW = 0x43;  // yellow bg, black text (inverted)
+
+// Peak-hold meter settings (SAMPLE arrives every ~100ms)
+const PEAK_HOLD_MS         = 1500;
+const PEAK_DECAY_INTERVAL_MS = 80;
 
 // Two-segment linear map anchored at 0 dB so both devices agree on unity.
 // Below 0 dB: [0, FADER_UNITY] ↔ [0, GAIN_UNITY]
@@ -139,6 +162,12 @@ function scribbleSysex(stripIndex, text, line = 0) {
   return bytes;
 }
 
+// X-Touch scribble strip colors: F0 00 00 66 14 72 [8 color bytes] F7
+// Sets background/text color for all 8 strips simultaneously.
+function scribbleColorSysex(colors) {
+  return [0xf0, 0x00, 0x00, 0x66, 0x14, 0x72, ...colors, 0xf7];
+}
+
 function defaultChannelState() {
   return {
     name: '', gain: 1100, mute: false, phantomPower: false,
@@ -150,7 +179,7 @@ function defaultChannelState() {
 
 /**
  * @param {number} localPort     Local UDP control port to listen on (default 5004); data = localPort + 1
- * @returns {{ applyRep, applyMeter, destroy, connected, emitter }}
+ * @returns {{ applyRep, applyMeter, destroy, connected, connectedHost, emitter, setAuxSwapStrip }}
  *
  * The X-Touch in MC master mode acts as the Apple MIDI initiator — it sends
  * IN packets to our server. We listen on localPort and accept the session.
@@ -162,6 +191,8 @@ export function createXtouchBridge(localPort = 5004) {
   const channels = Array.from({ length: 8 }, defaultChannelState);
   // Shadow for master outputs (index 0 = ch18, index 1 = ch19)
   const master   = [{ gain: 1100, mute: false }, { gain: 1100, mute: false }];
+  // Shadow state for AUX channel (ch9)
+  const aux = { gain: 1100, mute: false, name: '' };
 
   // Timestamps of last X-Touch fader touch per strip (0-7) or 'master'
   const faderTouchedAt = new Map();
@@ -173,10 +204,38 @@ export function createXtouchBridge(localPort = 5004) {
   // Active encoder assign mode. One of: null | 'locut' | 'hishelf' | 'finegain'
   let encoderMode = null;
 
-  let connected = false;
+  // AUX bank swap: which strip (0-indexed) is routed to ch9 when bank is active
+  let auxSwapStrip  = 7;   // default = strip 8 (index 7)
+  let auxBankActive = false;
+
+  // Peak-hold state for X-Touch meters
+  const peakLevels     = new Array(8).fill(0);
+  const peakHoldExpiry = new Array(8).fill(0);
+  const peakLastDecay  = new Array(8).fill(0);
+
+  let connected     = false;
   let connectedHost = null;
 
   const midi = createRtpMidiServer(localPort);
+
+  // ── Helper: compute and send all 8 strip colors in one sysex ──────────────
+  // Combines encoder mode state + AUX bank state so the two never conflict.
+
+  function syncAllColors() {
+    const colors = new Array(8).fill(COLOR_BLACK);
+    for (let idx = 0; idx < 8; idx++) {
+      if (encoderMode === 'locut') {
+        colors[idx] = channels[idx].lowCutEnabled ? COLOR_GREEN : COLOR_RED;
+      } else if (encoderMode === 'hishelf') {
+        colors[idx] = channels[idx].hiShelfEnabled ? COLOR_GREEN : COLOR_RED;
+      }
+    }
+    // AUX override — yellow strip so the user knows which one is routed to ch9
+    if (auxBankActive && auxSwapStrip >= 0 && auxSwapStrip < 8) {
+      colors[auxSwapStrip] = COLOR_YELLOW;
+    }
+    midi.sendSysex(scribbleColorSysex(colors));
+  }
 
   // ── Helper: update encoder assign LEDs ────────────────────────────────────
 
@@ -189,8 +248,16 @@ export function createXtouchBridge(localPort = 5004) {
   // Push scribble strips for all 8 channels to reflect the current encoder mode.
   // In a mode: line 0 = action label, line 1 = current value.
   // When mode is null: line 0 = channel name, line 1 = last-touched status (or blank).
+  // AUX swap strip is always rendered from aux state regardless of encoder mode.
   function syncEncoderScribbles() {
     for (let idx = 0; idx < 8; idx++) {
+      // AUX swap strip always shows aux data when bank is active
+      if (auxBankActive && idx === auxSwapStrip) {
+        midi.sendSysex(scribbleSysex(idx, aux.name || 'AUX    ', 0));
+        midi.sendSysex(scribbleSysex(idx, gainToDb(aux.gain), 1));
+        continue;
+      }
+
       const s  = channels[idx];
       const lt = lastTouched[idx];
       if (encoderMode === 'locut') {
@@ -222,12 +289,55 @@ export function createXtouchBridge(localPort = 5004) {
         }
       }
     }
+    syncAllColors();
+  }
+
+  // ── Helper: activate / deactivate AUX bank swap ───────────────────────────
+
+  function setAuxBankActive(active) {
+    auxBankActive = active;
+    const idx = auxSwapStrip;
+    if (auxBankActive) {
+      // Route strip to AUX (ch9)
+      midi.sendPitchBend(idx, gainToFader(aux.gain));
+      midi.sendNoteOn(0, NOTE_MUTE + idx, aux.mute ? LED_ON : LED_OFF);
+      midi.sendSysex(scribbleSysex(idx, aux.name || 'AUX    ', 0));
+      midi.sendSysex(scribbleSysex(idx, gainToDb(aux.gain), 1));
+    } else {
+      // Restore normal channel state
+      const s  = channels[idx];
+      const lt = lastTouched[idx];
+      midi.sendPitchBend(idx, gainToFader(s.gain));
+      midi.sendNoteOn(0, NOTE_MUTE + idx, s.mute ? LED_ON : LED_OFF);
+      midi.sendSysex(scribbleSysex(idx, s.name || '       ', 0));
+      if (lt === 'fader') {
+        midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
+      } else if (lt === 'mute') {
+        midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
+      } else {
+        midi.sendSysex(scribbleSysex(idx, '       ', 1));
+      }
+    }
+    syncAllColors();
+    console.log(`[xtouch] AUX bank ${auxBankActive ? 'ACTIVE' : 'off'} — strip ${idx + 1} → ch${auxBankActive ? 9 : idx + 1}`);
   }
 
   // ── X-Touch → SCM820 ───────────────────────────────────────────────────────
 
   midi.emitter.on('pitchBend', ({ channel, value }) => {
     if (channel >= 0 && channel <= 7) {
+      // Route the auxSwapStrip to ch9 when AUX bank is active
+      if (auxBankActive && channel === auxSwapStrip) {
+        const gain = faderToGain(value);
+        aux.gain = gain;
+        faderTouchedAt.set(channel, Date.now());
+        debug('fader ch%d (AUX) → gain %d', 9, gain);
+        console.log(`[xtouch] Fader strip ${channel + 1} (AUX) moved → AUDIO_GAIN_HI_RES ${gain} ch9`);
+        midi.sendSysex(scribbleSysex(channel, gainToDb(gain), 1));
+        emitter.emit('command', { type: 'SET', channel: 9, param: 'AUDIO_GAIN_HI_RES', value: String(gain) });
+        return;
+      }
+
       const scm820Ch = channel + 1;
       const gain     = faderToGain(value);
       faderTouchedAt.set(channel, Date.now());
@@ -327,14 +437,24 @@ export function createXtouchBridge(localPort = 5004) {
 
     } else if (note >= NOTE_MUTE && note < NOTE_MUTE + 8) {
       // MUTE: toggle mute; update scribble line 2 immediately with predicted state
-      const idx      = note - NOTE_MUTE;
-      const scm820   = idx + 1;
-      const willMute = !channels[idx].mute;
+      const idx    = note - NOTE_MUTE;
+      const scm820 = idx + 1;
+
+      if (auxBankActive && idx === auxSwapStrip) {
+        // Route to AUX (ch9)
+        const willMute = !aux.mute;
+        debug('mute strip%d (AUX ch9) TOGGLE', idx + 1);
+        console.log(`[xtouch] MUTE strip ${idx + 1} (AUX) pressed → AUDIO_MUTE TOGGLE ch9`);
+        midi.sendSysex(scribbleSysex(idx, willMute ? 'MUTED  ' : 'UNMUTED', 1));
+        emitter.emit('command', { type: 'SET', channel: 9, param: 'AUDIO_MUTE', value: 'TOGGLE' });
+      } else {
+        const willMute = !channels[idx].mute;
+        debug('mute ch%d TOGGLE', scm820);
+        console.log(`[xtouch] MUTE ch${scm820} pressed → AUDIO_MUTE TOGGLE`);
+        midi.sendSysex(scribbleSysex(idx, willMute ? 'MUTED  ' : 'UNMUTED', 1));
+        emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_MUTE', value: 'TOGGLE' });
+      }
       lastTouched[idx] = 'mute';
-      debug('mute ch%d TOGGLE', scm820);
-      console.log(`[xtouch] MUTE ch${scm820} pressed → AUDIO_MUTE TOGGLE`);
-      midi.sendSysex(scribbleSysex(idx, willMute ? 'MUTED  ' : 'UNMUTED', 1));
-      emitter.emit('command', { type: 'SET', channel: scm820, param: 'AUDIO_MUTE', value: 'TOGGLE' });
 
     } else if (note >= NOTE_SELECT && note < NOTE_SELECT + 8) {
       // SELECT: cycle mic sensitivity — only when input is Analog; ignore in Network mode
@@ -390,6 +510,10 @@ export function createXtouchBridge(localPort = 5004) {
       console.log(`[xtouch] Encoder mode: ${encoderMode ?? 'off'}`);
       debug('encoder mode → %s', encoderMode ?? 'off');
 
+    } else if (note === NOTE_BANK_LEFT || note === NOTE_BANK_RIGHT) {
+      // FADER BANK LEFT/RIGHT: toggle AUX swap mode for the configured strip
+      setAuxBankActive(!auxBankActive);
+
     } else if (note === NOTE_FLIP) {
       // FLIP: toggle mute on Mix A (ch18) and Mix B (ch19) together
       const willMute = !master[0].mute;
@@ -412,10 +536,12 @@ export function createXtouchBridge(localPort = 5004) {
           const gain      = parseInt(value, 10);
           channels[idx].gain = gain;
           const touchedAt = faderTouchedAt.get(idx);
-          if (!touchedAt || Date.now() - touchedAt > ECHO_SUPPRESS_MS) {
+          // Don't update fader if strip is currently showing AUX
+          if (!(auxBankActive && idx === auxSwapStrip) &&
+              (!touchedAt || Date.now() - touchedAt > ECHO_SUPPRESS_MS)) {
             midi.sendPitchBend(idx, gainToFader(gain));
           }
-          if (lastTouched[idx] === 'fader') {
+          if (lastTouched[idx] === 'fader' && !(auxBankActive && idx === auxSwapStrip)) {
             midi.sendSysex(scribbleSysex(idx, gainToDb(gain), 1));
           }
           break;
@@ -423,9 +549,11 @@ export function createXtouchBridge(localPort = 5004) {
         case 'AUDIO_MUTE': {
           const muted = value === 'ON';
           channels[idx].mute = muted;
-          midi.sendNoteOn(0, NOTE_MUTE + idx, muted ? LED_ON : LED_OFF);
-          if (lastTouched[idx] === 'mute') {
-            midi.sendSysex(scribbleSysex(idx, muted ? 'MUTED  ' : 'UNMUTED', 1));
+          if (!(auxBankActive && idx === auxSwapStrip)) {
+            midi.sendNoteOn(0, NOTE_MUTE + idx, muted ? LED_ON : LED_OFF);
+            if (lastTouched[idx] === 'mute') {
+              midi.sendSysex(scribbleSysex(idx, muted ? 'MUTED  ' : 'UNMUTED', 1));
+            }
           }
           break;
         }
@@ -463,6 +591,8 @@ export function createXtouchBridge(localPort = 5004) {
           if (lastTouched[idx] === 'locut') {
             midi.sendSysex(scribbleSysex(idx, on ? 'CUT ON ' : 'CUT OFF', 1));
           }
+          // Refresh strip color if lo-cut mode is active
+          if (encoderMode === 'locut') syncAllColors();
           break;
         }
         case 'LOW_CUT_FREQ': {
@@ -481,6 +611,8 @@ export function createXtouchBridge(localPort = 5004) {
           if (lastTouched[idx] === 'hishelf') {
             midi.sendSysex(scribbleSysex(idx, on ? 'SHF ON ' : 'SHF OFF', 1));
           }
+          // Refresh strip color if hi-shelf mode is active
+          if (encoderMode === 'hishelf') syncAllColors();
           break;
         }
         case 'HIGH_SHELF_GAIN': {
@@ -496,7 +628,39 @@ export function createXtouchBridge(localPort = 5004) {
         case 'CHAN_NAME': {
           const name = value.replace(/^\{|\}$/g, '').trim();
           channels[idx].name = name;
-          midi.sendSysex(scribbleSysex(idx, name, 0));
+          // Don't overwrite name if this strip is currently showing AUX
+          if (!(auxBankActive && idx === auxSwapStrip)) {
+            midi.sendSysex(scribbleSysex(idx, name, 0));
+          }
+          break;
+        }
+      }
+    } else if (channel === 9) {
+      // AUX channel — update shadow and push to strip if bank is active
+      switch (param) {
+        case 'AUDIO_GAIN_HI_RES': {
+          aux.gain = parseInt(value, 10);
+          if (auxBankActive) {
+            const touchedAt = faderTouchedAt.get(auxSwapStrip);
+            if (!touchedAt || Date.now() - touchedAt > ECHO_SUPPRESS_MS) {
+              midi.sendPitchBend(auxSwapStrip, gainToFader(aux.gain));
+            }
+            midi.sendSysex(scribbleSysex(auxSwapStrip, gainToDb(aux.gain), 1));
+          }
+          break;
+        }
+        case 'AUDIO_MUTE': {
+          aux.mute = value === 'ON';
+          if (auxBankActive) {
+            midi.sendNoteOn(0, NOTE_MUTE + auxSwapStrip, aux.mute ? LED_ON : LED_OFF);
+          }
+          break;
+        }
+        case 'CHAN_NAME': {
+          aux.name = value.replace(/^\{|\}$/g, '').trim();
+          if (auxBankActive) {
+            midi.sendSysex(scribbleSysex(auxSwapStrip, aux.name || 'AUX    ', 0));
+          }
           break;
         }
       }
@@ -521,18 +685,32 @@ export function createXtouchBridge(localPort = 5004) {
     }
   }
 
-  // ── SCM820 SAMPLE → X-Touch meters ────────────────────────────────────────
+  // ── SCM820 SAMPLE → X-Touch meters (with peak hold + decay) ──────────────
   // MCU meters: single 0xD0 status byte, data byte = (stripIndex << 4) | level
   // level: 0=off, 1-12=green segments, 13=orange, 14=clip/red
   // SCM820 SAMPLE indices 0-7 map to input channels 1-8.
 
   function applyMeter(levels) {
     if (!connected) return;
+    const now = Date.now();
     for (let i = 0; i < 8; i++) {
       const sample   = levels[i] ?? 0;
       const mcuLevel = sample >= 118 ? 14 : Math.round(sample / 120 * 12);
-      // MCU meter format: always 0xD0, data byte = (stripIndex << 4) | level
-      midi.sendChannelPressure(0, (i << 4) | mcuLevel);
+
+      if (mcuLevel >= peakLevels[i]) {
+        // New peak: hold it
+        peakLevels[i]     = mcuLevel;
+        peakHoldExpiry[i] = now + PEAK_HOLD_MS;
+        peakLastDecay[i]  = now;
+      } else if (now >= peakHoldExpiry[i]) {
+        // Hold expired: decay one step at PEAK_DECAY_INTERVAL_MS cadence
+        if (now - peakLastDecay[i] >= PEAK_DECAY_INTERVAL_MS) {
+          peakLevels[i]    = Math.max(0, peakLevels[i] - 1);
+          peakLastDecay[i] = now;
+        }
+      }
+
+      midi.sendChannelPressure(0, (i << 4) | peakLevels[i]);
     }
   }
 
@@ -540,37 +718,46 @@ export function createXtouchBridge(localPort = 5004) {
 
   function pushFullState() {
     for (let idx = 0; idx < 8; idx++) {
-      const s  = channels[idx];
-      const lt = lastTouched[idx];
-      midi.sendPitchBend(idx, gainToFader(s.gain));
-      midi.sendNoteOn(0, NOTE_MUTE   + idx, s.mute                      ? LED_ON : LED_OFF);
-      midi.sendNoteOn(0, NOTE_REC    + idx, s.phantomPower               ? LED_ON : LED_OFF);
-      midi.sendNoteOn(0, NOTE_SOLO   + idx, s.inputSource === 'Network'  ? LED_ON : LED_OFF);
-      midi.sendNoteOn(0, NOTE_SELECT + idx, s.micLevel    !== 'LINE_LVL' ? LED_ON : LED_OFF);
-      if (s.name) midi.sendSysex(scribbleSysex(idx, s.name, 0));
-      // Restore line 2 based on last interaction, or clear it
-      if (lt === 'fader') {
-        midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
-      } else if (lt === 'mute') {
-        midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
-      } else if (lt === 'select') {
-        midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
-      } else if (lt === 'phantom') {
-        midi.sendSysex(scribbleSysex(idx, s.phantomPower ? '48V ON ' : '48V OFF', 1));
-      } else if (lt === 'locut') {
-        midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(s.lowCutFreq), 1));
-      } else if (lt === 'hishelf') {
-        midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(s.hiShelfGain), 1));
+      if (auxBankActive && idx === auxSwapStrip) {
+        // Show AUX state for the swapped strip
+        midi.sendPitchBend(idx, gainToFader(aux.gain));
+        midi.sendNoteOn(0, NOTE_MUTE + idx, aux.mute ? LED_ON : LED_OFF);
+        midi.sendSysex(scribbleSysex(idx, aux.name || 'AUX    ', 0));
+        midi.sendSysex(scribbleSysex(idx, gainToDb(aux.gain), 1));
       } else {
-        midi.sendSysex(scribbleSysex(idx, '       ', 1));
+        const s  = channels[idx];
+        const lt = lastTouched[idx];
+        midi.sendPitchBend(idx, gainToFader(s.gain));
+        midi.sendNoteOn(0, NOTE_MUTE   + idx, s.mute                      ? LED_ON : LED_OFF);
+        midi.sendNoteOn(0, NOTE_REC    + idx, s.phantomPower               ? LED_ON : LED_OFF);
+        midi.sendNoteOn(0, NOTE_SOLO   + idx, s.inputSource === 'Network'  ? LED_ON : LED_OFF);
+        midi.sendNoteOn(0, NOTE_SELECT + idx, s.micLevel    !== 'LINE_LVL' ? LED_ON : LED_OFF);
+        if (s.name) midi.sendSysex(scribbleSysex(idx, s.name, 0));
+        // Restore line 2 based on last interaction, or clear it
+        if (lt === 'fader') {
+          midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
+        } else if (lt === 'mute') {
+          midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
+        } else if (lt === 'select') {
+          midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
+        } else if (lt === 'phantom') {
+          midi.sendSysex(scribbleSysex(idx, s.phantomPower ? '48V ON ' : '48V OFF', 1));
+        } else if (lt === 'locut') {
+          midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(s.lowCutFreq), 1));
+        } else if (lt === 'hishelf') {
+          midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(s.hiShelfGain), 1));
+        } else {
+          midi.sendSysex(scribbleSysex(idx, '       ', 1));
+        }
       }
     }
     // Master fader: use ch18 gain; FLIP LED: use ch18 mute
     midi.sendPitchBend(8, gainToFader(master[0].gain));
     midi.sendNoteOn(0, NOTE_FLIP, master[0].mute ? LED_ON : LED_OFF);
-    // Restore encoder assign mode LEDs and scribble strips
+    // Restore encoder assign mode LEDs, scribble strips, and colors
     syncEncoderModeLeds();
     if (encoderMode !== null) syncEncoderScribbles();
+    else syncAllColors();  // still need to paint AUX yellow if bank is active
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
@@ -603,9 +790,22 @@ export function createXtouchBridge(localPort = 5004) {
     midi.destroy();
   }
 
+  // Called from server when user changes the setting via UI
+  function setAuxSwapStrip(stripIndex) {
+    // stripIndex is 0-based (0-7)
+    const was = auxSwapStrip;
+    // Deactivate bank on the old strip before switching
+    if (auxBankActive && was !== stripIndex) {
+      setAuxBankActive(false);
+    }
+    auxSwapStrip = Math.max(0, Math.min(7, stripIndex));
+    console.log(`[xtouch] AUX swap strip set to strip ${auxSwapStrip + 1}`);
+  }
+
   return {
     applyRep, applyMeter, destroy, emitter,
-    get connected() { return connected; },
+    get connected()     { return connected; },
     get connectedHost() { return connectedHost; },
+    setAuxSwapStrip,
   };
 }
