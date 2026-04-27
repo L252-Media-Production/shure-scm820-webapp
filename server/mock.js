@@ -454,8 +454,6 @@ export function startMock(port) {
         clients.delete(socket);
         debug('Client disconnected');
       });
-
-      sendInitialState(socket);
     });
 
     let retries = 0;
