@@ -7,7 +7,9 @@ const debug = debugLib('scm820:bridge');
 
 const RECONNECT_DELAY_MS = 3000;
 
-export function createBridge(host, port) {
+export function createBridge(initialHost, initialPort) {
+  let host = initialHost;
+  let port = initialPort;
   const emitter = new EventEmitter();
   let socket = null;
   let buffer = '';
@@ -89,7 +91,16 @@ export function createBridge(host, port) {
     socket?.destroy();
   }
 
+  // Change target host/port and immediately reconnect. The socket 'close' event
+  // fires after destroy(), which schedules a new connect() with the updated host.
+  function reconnectTo(newHost, newPort) {
+    host = newHost;
+    if (newPort !== undefined) port = newPort;
+    clearTimeout(reconnectTimer);
+    socket?.destroy();
+  }
+
   connect();
 
-  return { emitter, send, sendGet, sendSet, destroy };
+  return { emitter, send, sendGet, sendSet, destroy, reconnectTo };
 }
