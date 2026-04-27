@@ -333,6 +333,28 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  if (req.url === '/api/xtouch' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { auxSwapStrip } = JSON.parse(body);
+        if (typeof auxSwapStrip === 'number' && auxSwapStrip >= 1 && auxSwapStrip <= 8) {
+          xtouchBridge?.setAuxSwapStrip(auxSwapStrip - 1);  // convert to 0-indexed
+          res.writeHead(200, corsHeaders);
+          res.end(JSON.stringify({ ok: true }));
+        } else {
+          res.writeHead(400, corsHeaders);
+          res.end(JSON.stringify({ error: 'auxSwapStrip must be 1-8' }));
+        }
+      } catch {
+        res.writeHead(400, corsHeaders);
+        res.end(JSON.stringify({ error: 'Invalid request body' }));
+      }
+    });
+    return;
+  }
+
   // Serve static files from client/dist
   const urlPath = req.url.split('?')[0];
   let filePath = path.join(STATIC_DIR, urlPath === '/' ? 'index.html' : urlPath);

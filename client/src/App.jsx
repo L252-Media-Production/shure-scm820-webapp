@@ -46,7 +46,7 @@ function SegBtn({ active, onClick, children }) {
   );
 }
 
-function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, autoCheckUpdates, onAutoCheckChange }) {
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, autoCheckUpdates, onAutoCheckChange, auxSwapStrip, onAuxSwapStripChange }) {
   const [host, setHost] = useState(deviceInfo.host || '');
   const [expanded, setExpanded] = useState(false);
   const [lastActiveRate, setLastActiveRate] = useState(1000);
@@ -255,6 +255,21 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
             Set your X-Touch to MC slave mode and point it at this server's IP.
           </div>
         )}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-xs text-zinc-500">AUX bank strip</span>
+          <select
+            value={auxSwapStrip}
+            onChange={(e) => onAuxSwapStripChange(Number(e.target.value))}
+            className="bg-zinc-700 text-zinc-200 text-xs rounded px-2 py-1 border border-zinc-600 cursor-pointer"
+          >
+            {[1,2,3,4,5,6,7,8].map((n) => (
+              <option key={n} value={n}>Strip {n}</option>
+            ))}
+          </select>
+        </div>
+        <div className="text-[10px] text-zinc-600 mt-1">
+          FADER BANK L/R swaps this strip with the AUX (ch9) channel.
+        </div>
       </div>
 
       {/* Preferences */}
@@ -275,7 +290,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
 }
 
 export default function App() {
-  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, loadingProgress } = useSCM820();
+  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
   const xtouchConnected = useMixerStore((s) => s.xtouchConnected);
@@ -288,6 +303,9 @@ export default function App() {
 
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(
     () => localStorage.getItem('autoCheckUpdates') !== 'false'
+  );
+  const [auxSwapStrip, setAuxSwapStrip] = useState(
+    () => parseInt(localStorage.getItem('auxSwapStrip') || '8', 10)
   );
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestReleaseUrl, setLatestReleaseUrl] = useState(null);
@@ -340,7 +358,10 @@ export default function App() {
       hasConnectedRef.current = true;
       setShowModal(false);
       setShowPopover(false);
+      // Sync persisted AUX swap strip preference to the server
+      updateXtouchConfig({ auxSwapStrip });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
   // Show config modal after 3s if we've never connected (no device configured)
@@ -355,6 +376,12 @@ export default function App() {
     await updateDeviceHost(host);
     setShowPopover(false);
     setShowModal(false);
+  }
+
+  async function handleAuxSwapStripChange(strip) {
+    setAuxSwapStrip(strip);
+    localStorage.setItem('auxSwapStrip', String(strip));
+    await updateXtouchConfig({ auxSwapStrip: strip });
   }
 
   return (
@@ -420,6 +447,8 @@ export default function App() {
                 xtouchConnected={xtouchConnected}
                 autoCheckUpdates={autoCheckUpdates}
                 onAutoCheckChange={handleAutoCheckChange}
+                auxSwapStrip={auxSwapStrip}
+                onAuxSwapStripChange={handleAuxSwapStripChange}
               />
             </>
           )}
