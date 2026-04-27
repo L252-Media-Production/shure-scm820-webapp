@@ -45,9 +45,6 @@ const GLOBAL_PARAMS = [
   'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
   'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
   'INPUT_METER_MODE', 'METER_TYPE', 'HEADPHONE_SOURCE', 'DISABLE_LEDS', 'REAR_PANEL_LOCK',
-  'AUTO_MIX_MODE',
-  'DFR1_BYPASS', 'DFR1_ASSIGNED_CHAN', 'DFR1_FREEZE',
-  'DFR2_BYPASS', 'DFR2_ASSIGNED_CHAN', 'DFR2_FREEZE',
 ];
 
 const deviceConfig = {
@@ -105,14 +102,19 @@ function broadcastToClients(payload) {
   }
 }
 
+const GLOBAL_PARAMS_OPT = [
+  'AUTO_MIX_MODE',
+  'DFR1_BYPASS', 'DFR1_ASSIGNED_CHAN', 'DFR1_FREEZE',
+  'DFR2_BYPASS', 'DFR2_ASSIGNED_CHAN', 'DFR2_FREEZE',
+];
+
 // Returns array of "channel:param" keys matching every GET sent — used by the client to
 // track exactly which REPs it still needs before hiding the loading screen.
+// getOpt() sends the GET without adding to the tracked keys — device may not support the param.
 function requestInitialState(bridge) {
   const keys = [];
-  const get = (ch, param) => {
-    bridge.sendGet(ch, param);
-    keys.push(`${ch ?? 0}:${param}`);
-  };
+  const get    = (ch, param) => { bridge.sendGet(ch, param); keys.push(`${ch ?? 0}:${param}`); };
+  const getOpt = (ch, param) => { bridge.sendGet(ch, param); };
 
   for (const ch of INPUT_CHANNELS) {
     get(ch, 'CHAN_NAME');
@@ -127,11 +129,11 @@ function requestInitialState(bridge) {
     get(ch, 'LOW_CUT_FREQ');
     get(ch, 'HIGH_SHELF_ENABLE');
     get(ch, 'HIGH_SHELF_GAIN');
-    get(ch, 'ALWAYS_ON_ENABLE_B');
-    get(ch, 'CHAIR_OVERRIDE_ENABLE_B');
-    get(ch, 'CHAIR_MUTE_CTRL_ENABLE_B');
-    get(ch, 'INPUT_AUDIO_MIX_BUS');
-    get(ch, 'HW_GATING_LOGIC');
+    getOpt(ch, 'ALWAYS_ON_ENABLE_B');
+    getOpt(ch, 'CHAIR_OVERRIDE_ENABLE_B');
+    getOpt(ch, 'CHAIR_MUTE_CTRL_ENABLE_B');
+    getOpt(ch, 'INPUT_AUDIO_MIX_BUS');
+    getOpt(ch, 'HW_GATING_LOGIC');
   }
   // Aux channel — no always-on, phantom power, level switch
   get(AUX_CHANNEL, 'CHAN_NAME');
@@ -149,9 +151,10 @@ function requestInitialState(bridge) {
     get(ch, 'AUDIO_MUTE');
     get(ch, 'AUDIO_GAIN_HI_RES');
     get(ch, 'AUDIO_OUT_LVL_SWITCH');
-    get(ch, 'INTELLIMIX_MODE');
+    getOpt(ch, 'INTELLIMIX_MODE');
   }
   for (const p of GLOBAL_PARAMS) get(null, p);
+  for (const p of GLOBAL_PARAMS_OPT) getOpt(null, p);
 
   return keys;
 }

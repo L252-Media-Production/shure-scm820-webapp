@@ -117,10 +117,8 @@ export function useSCM820() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setConnected(true);
         loadingRef.current = makeLoadingState();
-        loadingRef.current.active = true;
-        setLoadingProgress(0);
+        setLoadingProgress(null);
       };
 
       ws.onclose = () => {
@@ -167,6 +165,9 @@ export function useSCM820() {
 
           case 'DISCONNECTED':
             setConnected(false);
+            clearTimeout(loadingRef.current.timer);
+            loadingRef.current = makeLoadingState();
+            setLoadingProgress(null);
             break;
 
           case 'CONFIG':
