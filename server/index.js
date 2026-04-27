@@ -38,12 +38,9 @@ const METER_RATE_MS = 100;
 const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
 const AUX_CHANNEL = 9;
 
+// Core device params — all firmware versions respond to these; tracked for loading completion
 const GLOBAL_PARAMS = [
   'DEVICE_ID', 'SERIAL_NUM', 'FW_VER',
-  'IP_SUBNET_SHURE_CONTROL', 'IP_GATEWAY_SHURE_CONTROL',
-  'NETWORK_AUDIO_PROTOCOL', 'NETWORK_AUDIO_VER',
-  'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
-  'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
   'INPUT_METER_MODE', 'METER_TYPE', 'HEADPHONE_SOURCE', 'DISABLE_LEDS', 'REAR_PANEL_LOCK',
 ];
 
@@ -102,7 +99,12 @@ function broadcastToClients(payload) {
   }
 }
 
+// Extended params — fetched but not tracked; device may not support all depending on firmware
 const GLOBAL_PARAMS_OPT = [
+  'IP_SUBNET_SHURE_CONTROL', 'IP_GATEWAY_SHURE_CONTROL',
+  'NETWORK_AUDIO_PROTOCOL', 'NETWORK_AUDIO_VER',
+  'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
+  'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
   'AUTO_MIX_MODE',
   'DFR1_BYPASS', 'DFR1_ASSIGNED_CHAN', 'DFR1_FREEZE',
   'DFR2_BYPASS', 'DFR2_ASSIGNED_CHAN', 'DFR2_FREEZE',
@@ -124,11 +126,11 @@ function requestInitialState(bridge) {
     get(ch, 'INPUT_AUDIO_GATE_A');
     get(ch, 'INPUT_AUDIO_SOURCE');
     get(ch, 'PHANTOM_PWR_ENABLE');
-    get(ch, 'AUDIO_IN_LVL_SWITCH');
-    get(ch, 'LOW_CUT_ENABLE');
-    get(ch, 'LOW_CUT_FREQ');
-    get(ch, 'HIGH_SHELF_ENABLE');
-    get(ch, 'HIGH_SHELF_GAIN');
+    getOpt(ch, 'AUDIO_IN_LVL_SWITCH');
+    getOpt(ch, 'LOW_CUT_ENABLE');
+    getOpt(ch, 'LOW_CUT_FREQ');
+    getOpt(ch, 'HIGH_SHELF_ENABLE');
+    getOpt(ch, 'HIGH_SHELF_GAIN');
     getOpt(ch, 'ALWAYS_ON_ENABLE_B');
     getOpt(ch, 'CHAIR_OVERRIDE_ENABLE_B');
     getOpt(ch, 'CHAIR_MUTE_CTRL_ENABLE_B');
@@ -140,17 +142,17 @@ function requestInitialState(bridge) {
   get(AUX_CHANNEL, 'AUDIO_MUTE');
   get(AUX_CHANNEL, 'AUDIO_GAIN_HI_RES');
   get(AUX_CHANNEL, 'INPUT_AUDIO_GATE_A');
-  get(AUX_CHANNEL, 'INPUT_AUDIO_SOURCE');
-  get(AUX_CHANNEL, 'LOW_CUT_ENABLE');
-  get(AUX_CHANNEL, 'LOW_CUT_FREQ');
-  get(AUX_CHANNEL, 'HIGH_SHELF_ENABLE');
-  get(AUX_CHANNEL, 'HIGH_SHELF_GAIN');
-  for (let ch = 10; ch <= 17; ch++) get(ch, 'DIRECT_OUT_SOURCE');
+  getOpt(AUX_CHANNEL, 'INPUT_AUDIO_SOURCE');
+  getOpt(AUX_CHANNEL, 'LOW_CUT_ENABLE');
+  getOpt(AUX_CHANNEL, 'LOW_CUT_FREQ');
+  getOpt(AUX_CHANNEL, 'HIGH_SHELF_ENABLE');
+  getOpt(AUX_CHANNEL, 'HIGH_SHELF_GAIN');
+  for (let ch = 10; ch <= 17; ch++) getOpt(ch, 'DIRECT_OUT_SOURCE');
   for (const ch of [18, 19]) {
     get(ch, 'CHAN_NAME');
     get(ch, 'AUDIO_MUTE');
     get(ch, 'AUDIO_GAIN_HI_RES');
-    get(ch, 'AUDIO_OUT_LVL_SWITCH');
+    getOpt(ch, 'AUDIO_OUT_LVL_SWITCH');
     getOpt(ch, 'INTELLIMIX_MODE');
   }
   for (const p of GLOBAL_PARAMS) get(null, p);
@@ -230,6 +232,7 @@ wss.on('connection', (ws) => {
     type: 'XTOUCH_CONFIG',
     localPort: XTOUCH_LOCAL_PORT,
     connected: xtouchBridge?.connected ?? false,
+    host: xtouchBridge?.connectedHost ?? null,
   });
 
   ws.on('message', (data) => {

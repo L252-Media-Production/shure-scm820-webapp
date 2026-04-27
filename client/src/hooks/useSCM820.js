@@ -7,7 +7,7 @@ const WS_URL =
 
 const API_URL = WS_URL.replace(/^ws/, 'http');
 const RECONNECT_DELAY_MS = 3000;
-const LOADING_TIMEOUT_MS = 8000;
+const LOADING_TIMEOUT_MS = 20000;
 const MAX_DEBUG_ENTRIES = 200;
 
 const NON_AUDIO_PARAMS = new Set([
@@ -231,7 +231,10 @@ export function useSCM820() {
             break;
 
           case 'XTOUCH_CONFIG':
-            setXtouchInfo({ localPort: msg.localPort ?? 5004 });
+            setXtouchInfo({
+              localPort: msg.localPort ?? 5004,
+              ...(msg.host !== undefined ? { connectedHost: msg.host } : {}),
+            });
             setXtouchConnected(msg.connected ?? false);
             break;
         }
