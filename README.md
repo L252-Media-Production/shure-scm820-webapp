@@ -14,7 +14,7 @@ Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 22
 
 - Real-time channel control: fader gain, mute, Always On
 - Per-channel input source (Analog / Network), mic sensitivity, and 48V phantom power
-- Per-channel EQ: lo-cut filter (25–320 Hz) and hi-shelf gain (±12 dB) with collapsible panel in each channel strip
+- Per-channel EQ: lo-cut filter (25–320 Hz) and hi-shelf gain (±12 dB) with collapsible panel in each channel strip; values are click-to-edit
 - VU meter display driven by SCM820 SAMPLE frames
 - Output A/B controls with mute and gain
 - Direct output source assignment (channels 10–17)
@@ -22,6 +22,9 @@ Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 22
 - Live device info: Device ID, serial number, firmware version, network configuration
 - Fader resolution toggle (Coarse / Fine) per channel strip
 - In-browser debug console with live audio command traffic and a **Hide Peaks** filter (on by default)
+- Tab bar with reorderable tabs (session-based); IntelliMix and DFR tabs show "Coming Soon!"
+- Automatic update check — checks GitHub releases every 24 hours; amber **ⓘ** icon in the header when a new release is available
+- **Automatically Check For Updates** preference in the status popover (enabled by default, persisted in `localStorage`)
 - PWA — installable from the browser on desktop and mobile
 - Docker support for network-accessible deployment
 - Mock SCM820 server for local development without hardware
