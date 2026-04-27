@@ -174,6 +174,7 @@ export function createXtouchBridge(localPort = 5004) {
   let encoderMode = null;
 
   let connected = false;
+  let connectedHost = null;
 
   const midi = createRtpMidiServer(localPort);
 
@@ -183,6 +184,44 @@ export function createXtouchBridge(localPort = 5004) {
     midi.sendNoteOn(0, NOTE_ASSIGN_TRACK, encoderMode === 'locut'    ? LED_ON : LED_OFF);
     midi.sendNoteOn(0, NOTE_ASSIGN_PAN,   encoderMode === 'hishelf'  ? LED_ON : LED_OFF);
     midi.sendNoteOn(0, NOTE_ASSIGN_EQ,    encoderMode === 'finegain' ? LED_ON : LED_OFF);
+  }
+
+  // Push scribble strips for all 8 channels to reflect the current encoder mode.
+  // In a mode: line 0 = action label, line 1 = current value.
+  // When mode is null: line 0 = channel name, line 1 = last-touched status (or blank).
+  function syncEncoderScribbles() {
+    for (let idx = 0; idx < 8; idx++) {
+      const s  = channels[idx];
+      const lt = lastTouched[idx];
+      if (encoderMode === 'locut') {
+        midi.sendSysex(scribbleSysex(idx, 'CUT    ', 0));
+        midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(s.lowCutFreq), 1));
+      } else if (encoderMode === 'hishelf') {
+        midi.sendSysex(scribbleSysex(idx, 'SHLF   ', 0));
+        midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(s.hiShelfGain), 1));
+      } else if (encoderMode === 'finegain') {
+        midi.sendSysex(scribbleSysex(idx, 'GAIN   ', 0));
+        midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
+      } else {
+        // Restore default: name on top, last-touched status on bottom
+        midi.sendSysex(scribbleSysex(idx, s.name || '       ', 0));
+        if (lt === 'fader') {
+          midi.sendSysex(scribbleSysex(idx, gainToDb(s.gain), 1));
+        } else if (lt === 'mute') {
+          midi.sendSysex(scribbleSysex(idx, s.mute ? 'MUTED  ' : 'UNMUTED', 1));
+        } else if (lt === 'select') {
+          midi.sendSysex(scribbleSysex(idx, MIC_LEVEL_LABELS[s.micLevel], 1));
+        } else if (lt === 'phantom') {
+          midi.sendSysex(scribbleSysex(idx, s.phantomPower ? '48V ON ' : '48V OFF', 1));
+        } else if (lt === 'locut') {
+          midi.sendSysex(scribbleSysex(idx, loCutFreqLabel(s.lowCutFreq), 1));
+        } else if (lt === 'hishelf') {
+          midi.sendSysex(scribbleSysex(idx, hiShelfGainLabel(s.hiShelfGain), 1));
+        } else {
+          midi.sendSysex(scribbleSysex(idx, '       ', 1));
+        }
+      }
+    }
   }
 
   // ── X-Touch → SCM820 ───────────────────────────────────────────────────────
@@ -218,7 +257,7 @@ export function createXtouchBridge(localPort = 5004) {
     const idx    = controller - CC_ENCODER_BASE;
     const scm820 = idx + 1;
     // MCU relative encoding: 1-63 = CW (+), 65-127 = CCW (-)
-    const delta  = value <= 63 ? value : value - 128;
+    const delta  = value <= 63 ? value : -(value - 64);
 
     if (encoderMode === 'locut') {
       const freq = Math.max(LO_CUT_FREQ_MIN, Math.min(LO_CUT_FREQ_MAX, channels[idx].lowCutFreq + delta));
@@ -347,6 +386,7 @@ export function createXtouchBridge(localPort = 5004) {
                     : 'finegain';
       encoderMode = encoderMode === pressed ? null : pressed;
       syncEncoderModeLeds();
+      syncEncoderScribbles();
       console.log(`[xtouch] Encoder mode: ${encoderMode ?? 'off'}`);
       debug('encoder mode → %s', encoderMode ?? 'off');
 
@@ -528,14 +568,16 @@ export function createXtouchBridge(localPort = 5004) {
     // Master fader: use ch18 gain; FLIP LED: use ch18 mute
     midi.sendPitchBend(8, gainToFader(master[0].gain));
     midi.sendNoteOn(0, NOTE_FLIP, master[0].mute ? LED_ON : LED_OFF);
-    // Restore encoder assign mode LEDs
+    // Restore encoder assign mode LEDs and scribble strips
     syncEncoderModeLeds();
+    if (encoderMode !== null) syncEncoderScribbles();
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   midi.emitter.on('ready', ({ host: remoteHost }) => {
     connected = true;
+    connectedHost = remoteHost;
     console.log(`[xtouch] X-Touch connected from ${remoteHost} — pushing full state`);
     debug('X-Touch ready from %s', remoteHost);
     pushFullState();
@@ -544,6 +586,7 @@ export function createXtouchBridge(localPort = 5004) {
 
   midi.emitter.on('disconnected', () => {
     connected = false;
+    connectedHost = null;
     console.log('[xtouch] X-Touch disconnected — waiting for new connection');
     debug('X-Touch disconnected');
     emitter.emit('disconnected');
@@ -560,5 +603,9 @@ export function createXtouchBridge(localPort = 5004) {
     midi.destroy();
   }
 
-  return { applyRep, applyMeter, destroy, get connected() { return connected; }, emitter };
+  return {
+    applyRep, applyMeter, destroy, emitter,
+    get connected() { return connected; },
+    get connectedHost() { return connectedHost; },
+  };
 }
