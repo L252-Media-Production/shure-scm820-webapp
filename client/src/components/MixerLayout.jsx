@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ChannelStrip } from './ChannelStrip.jsx';
 import { MasterSection } from './MasterSection.jsx';
 import { OutputTab } from './OutputTab.jsx';
+import { IntelliMixTab } from './IntelliMixTab.jsx';
+import { DfrTab } from './DfrTab.jsx';
 import { useMixerStore } from '../state/mixerStore.js';
 
 const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -135,11 +137,11 @@ export function MixerLayout({ sendSet, meterLevelsRef }) {
       )}
 
       {!editing && activeTab === 'intellimix' && (
-        <ComingSoon label="IntelliMix" />
+        <IntelliMixTab sendSet={sendSet} />
       )}
 
       {!editing && activeTab === 'dfr' && (
-        <ComingSoon label="DFR" />
+        <DfrTab sendSet={sendSet} />
       )}
 
       {editing && (

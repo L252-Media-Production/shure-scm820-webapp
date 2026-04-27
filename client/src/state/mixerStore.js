@@ -14,6 +14,11 @@ function defaultChannel() {
     mute: false,
     gain: GAIN_0DB,
     alwaysOn: false,
+    alwaysOnB: false,
+    chairOverride: false,
+    chairMuteCtrl: false,
+    mixBus: 'BOTH',
+    hwGatingLogic: 'MIXBUS_A',
     intellimixMode: 'CLASSIC',
     gateOpen: false,
     inputSource: 'Analog',
@@ -55,6 +60,13 @@ const DEVICE_PARAM_MAP = {
   DISABLE_LEDS:                   'disableLeds',
   FLASH:                          'flash',
   REAR_PANEL_LOCK:                'rearPanelLock',
+  AUTO_MIX_MODE:                  'autoMixMode',
+  DFR1_BYPASS:                    'dfr1Bypass',
+  DFR1_ASSIGNED_CHAN:             'dfr1AssignedChan',
+  DFR1_FREEZE:                    'dfr1Freeze',
+  DFR2_BYPASS:                    'dfr2Bypass',
+  DFR2_ASSIGNED_CHAN:             'dfr2AssignedChan',
+  DFR2_FREEZE:                    'dfr2Freeze',
 };
 
 function buildChannels() {
@@ -93,6 +105,13 @@ export const useMixerStore = create((set) => ({
     disableLeds: null,
     flash: null,
     rearPanelLock: null,
+    autoMixMode: 'SINGLE',
+    dfr1Bypass: 'OFF',
+    dfr1AssignedChan: '020',
+    dfr1Freeze: 'OFF',
+    dfr2Bypass: 'OFF',
+    dfr2AssignedChan: '020',
+    dfr2Freeze: 'OFF',
   },
 
   xtouchConnected: false,
@@ -133,6 +152,22 @@ export const useMixerStore = create((set) => ({
         case 'ALWAYS_ON_ENABLE_A':
           updated.alwaysOn = value === 'ON';
           break;
+        case 'ALWAYS_ON_ENABLE_B':
+          updated.alwaysOnB = value === 'ON';
+          break;
+        case 'CHAIR_OVERRIDE_ENABLE_B':
+          updated.chairOverride = value === 'ON';
+          break;
+        case 'CHAIR_MUTE_CTRL_ENABLE_B':
+          updated.chairMuteCtrl = value === 'ON';
+          break;
+        case 'INPUT_AUDIO_MIX_BUS':
+          updated.mixBus = value;
+          break;
+        case 'HW_GATING_LOGIC':
+          updated.hwGatingLogic = value;
+          break;
+        case 'SET_INTELLIMIX_MODE':
         case 'INTELLIMIX_MODE':
           updated.intellimixMode = value;
           break;
