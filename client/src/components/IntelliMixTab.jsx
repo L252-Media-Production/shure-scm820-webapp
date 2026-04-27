@@ -4,18 +4,6 @@ const INPUT_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const INTELLIMIX_MODES = ['CLASSIC', 'SMOOTH', 'EXTREME', 'CUSTOM_PRESET', 'MANUAL'];
 
-const MIX_BUS_OPTIONS = [
-  { value: 'BOTH',    label: 'Both'   },
-  { value: 'NEITHER', label: 'Neither'},
-  { value: 'MIXBUS_A', label: 'Bus A' },
-  { value: 'MIXBUS_B', label: 'Bus B' },
-];
-
-const HW_GATING_OPTIONS = [
-  { value: 'MIXBUS_A', label: 'Bus A' },
-  { value: 'MIXBUS_B', label: 'Bus B' },
-];
-
 function ModeButton({ label, active, onClick }) {
   return (
     <button
@@ -31,11 +19,11 @@ function ModeButton({ label, active, onClick }) {
   );
 }
 
-function OnOffToggle({ value, onParam, offParam, onValue = 'ON', offValue = 'OFF', onChange }) {
+function OnOffToggle({ value, onChange }) {
   const isOn = value === true || value === 'ON';
   return (
     <button
-      onClick={() => onChange(isOn ? offValue : onValue)}
+      onClick={() => onChange(isOn ? 'OFF' : 'ON')}
       className={`w-12 py-0.5 text-[9px] rounded font-bold tracking-wider transition-colors ${
         isOn
           ? 'bg-teal-700 text-white'
@@ -67,6 +55,53 @@ function SegButton({ options, value, onChange }) {
   );
 }
 
+function MixBusCheckboxes({ value, ch, sendSet }) {
+  const busA = value === 'BOTH' || value === 'MIXBUS_A';
+  const busB = value === 'BOTH' || value === 'MIXBUS_B';
+
+  function handleChange(bus, checked) {
+    const newA = bus === 'A' ? checked : busA;
+    const newB = bus === 'B' ? checked : busB;
+    const next = newA && newB ? 'BOTH' : newA ? 'MIXBUS_A' : newB ? 'MIXBUS_B' : 'NEITHER';
+    sendSet(ch, 'INPUT_AUDIO_MIX_BUS', next);
+  }
+
+  return (
+    <div className="flex gap-2 justify-center">
+      {[['A', busA], ['B', busB]].map(([bus, checked]) => (
+        <label key={bus} className="flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => handleChange(bus, e.target.checked)}
+            className="accent-teal-600 w-3 h-3"
+          />
+          <span className="text-[9px] text-zinc-400 font-mono font-bold">{bus}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function GatingLogicRadio({ value, ch, sendSet }) {
+  return (
+    <div className="flex gap-2 justify-center">
+      {[['MIXBUS_A', 'A'], ['MIXBUS_B', 'B']].map(([val, label]) => (
+        <label key={val} className="flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="radio"
+            name={`gate-${ch}`}
+            checked={value === val}
+            onChange={() => sendSet(ch, 'HW_GATING_LOGIC', val)}
+            className="accent-teal-600 w-3 h-3"
+          />
+          <span className="text-[9px] text-zinc-400 font-mono font-bold">{label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function IntelliMixTab({ sendSet }) {
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
   const channels   = useMixerStore((s) => s.channels);
@@ -79,9 +114,7 @@ export function IntelliMixTab({ sendSet }) {
   const isManualB = modeB === 'MANUAL';
   const isDual    = autoMixMode === 'DUAL';
 
-  // Show manual columns if any relevant output is in MANUAL mode
   const showManualCols = isDual ? (isManualA || isManualB) : isManualA;
-  // Show auto columns if any relevant output is NOT in MANUAL mode
   const showAutoCols   = isDual ? (!isManualA || !isManualB) : !isManualA;
 
   return (
@@ -109,7 +142,7 @@ export function IntelliMixTab({ sendSet }) {
                 key={mode}
                 label={mode === 'CUSTOM_PRESET' ? 'Custom' : mode.charAt(0) + mode.slice(1).toLowerCase()}
                 active={modeA === mode}
-                onClick={() => sendSet(18, 'SET_INTELLIMIX_MODE', mode)}
+                onClick={() => sendSet(18, 'INTELLIMIX_MODE', mode)}
               />
             ))}
           </div>
@@ -126,7 +159,7 @@ export function IntelliMixTab({ sendSet }) {
                   key={mode}
                   label={mode === 'CUSTOM_PRESET' ? 'Custom' : mode.charAt(0) + mode.slice(1).toLowerCase()}
                   active={modeB === mode}
-                  onClick={() => sendSet(19, 'SET_INTELLIMIX_MODE', mode)}
+                  onClick={() => sendSet(19, 'INTELLIMIX_MODE', mode)}
                 />
               ))}
             </div>
@@ -145,7 +178,7 @@ export function IntelliMixTab({ sendSet }) {
               {showManualCols && (
                 <>
                   <th className="text-center px-2 pb-2 text-zinc-500 font-mono text-[10px] uppercase tracking-wider whitespace-nowrap">Mix Bus</th>
-                  <th className="text-center px-2 pb-2 text-zinc-500 font-mono text-[10px] uppercase tracking-wider whitespace-nowrap">HW Gate</th>
+                  <th className="text-center px-2 pb-2 text-zinc-500 font-mono text-[10px] uppercase tracking-wider whitespace-nowrap">Gating Logic</th>
                 </>
               )}
 
@@ -172,26 +205,10 @@ export function IntelliMixTab({ sendSet }) {
                   {showManualCols && (
                     <>
                       <td className="px-2 py-1 text-center">
-                        <select
-                          value={data.mixBus ?? 'BOTH'}
-                          onChange={(e) => sendSet(ch, 'INPUT_AUDIO_MIX_BUS', e.target.value)}
-                          className="bg-zinc-700 text-zinc-300 text-[9px] rounded px-1 py-0.5 border border-zinc-600 cursor-pointer"
-                        >
-                          {MIX_BUS_OPTIONS.map(({ value, label }) => (
-                            <option key={value} value={value}>{label}</option>
-                          ))}
-                        </select>
+                        <MixBusCheckboxes value={data.mixBus ?? 'BOTH'} ch={ch} sendSet={sendSet} />
                       </td>
                       <td className="px-2 py-1 text-center">
-                        <select
-                          value={data.hwGatingLogic ?? 'MIXBUS_A'}
-                          onChange={(e) => sendSet(ch, 'HW_GATING_LOGIC', e.target.value)}
-                          className="bg-zinc-700 text-zinc-300 text-[9px] rounded px-1 py-0.5 border border-zinc-600 cursor-pointer"
-                        >
-                          {HW_GATING_OPTIONS.map(({ value, label }) => (
-                            <option key={value} value={value}>{label}</option>
-                          ))}
-                        </select>
+                        <GatingLogicRadio value={data.hwGatingLogic ?? 'MIXBUS_A'} ch={ch} sendSet={sendSet} />
                       </td>
                     </>
                   )}
