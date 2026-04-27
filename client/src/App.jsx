@@ -1,9 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSCM820 } from './hooks/useSCM820.js';
 import { useMixerStore } from './state/mixerStore.js';
 import { MixerLayout } from './components/MixerLayout.jsx';
 import { ConnectionModal } from './components/ConnectionModal.jsx';
 import { DebugDrawer } from './components/DebugDrawer.jsx';
+
+const GITHUB_RELEASES_API = 'https://api.github.com/repos/L252-Media-Production/shure-scm820-webapp/releases/latest';
+const UPDATE_CHECK_MS = 24 * 60 * 60 * 1000;
+
+function semverGt(a, b) {
+  const parse = (v) => v.replace(/^v/, '').split('.').map(Number);
+  const pa = parse(a), pb = parse(b);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return true;
+    if ((pa[i] || 0) < (pb[i] || 0)) return false;
+  }
+  return false;
+}
 
 function InfoRow({ label, value }) {
   return (
@@ -33,7 +46,7 @@ function SegBtn({ active, onClick, children }) {
   );
 }
 
-function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected }) {
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, autoCheckUpdates, onAutoCheckChange }) {
   const [host, setHost] = useState(deviceInfo.host || '');
   const [expanded, setExpanded] = useState(false);
   const [lastActiveRate, setLastActiveRate] = useState(1000);
@@ -243,6 +256,20 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
           </div>
         )}
       </div>
+
+      {/* Preferences */}
+      <div className="border-t border-zinc-700 pt-3 mt-1">
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Preferences</div>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoCheckUpdates}
+            onChange={(e) => onAutoCheckChange(e.target.checked)}
+            className="w-3.5 h-3.5 accent-blue-500"
+          />
+          <span className="text-xs text-zinc-400">Automatically Check For Updates?</span>
+        </label>
+      </div>
     </div>
   );
 }
@@ -258,6 +285,55 @@ export default function App() {
   const [showPopover, setShowPopover] = useState(false);
   const [zoom, setZoom] = useState(100);
   const hasConnectedRef = useRef(false);
+
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(
+    () => localStorage.getItem('autoCheckUpdates') !== 'false'
+  );
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestReleaseUrl, setLatestReleaseUrl] = useState(null);
+
+  const runUpdateCheck = useCallback(() => {
+    fetch(GITHUB_RELEASES_API)
+      .then((r) => r.json())
+      .then((data) => {
+        const tag = data.tag_name;
+        const url = data.html_url;
+        localStorage.setItem('updateLastCheck', String(Date.now()));
+        localStorage.setItem('updateLatestTag', tag || '');
+        localStorage.setItem('updateLatestUrl', url || '');
+        if (tag && semverGt(tag, __APP_VERSION__)) {
+          setUpdateAvailable(true);
+          setLatestReleaseUrl(url);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!autoCheckUpdates) return;
+    const lastCheck = parseInt(localStorage.getItem('updateLastCheck') || '0', 10);
+    const cachedTag = localStorage.getItem('updateLatestTag') || '';
+    const cachedUrl = localStorage.getItem('updateLatestUrl') || '';
+    if (cachedTag && cachedUrl && Date.now() - lastCheck < UPDATE_CHECK_MS) {
+      if (semverGt(cachedTag, __APP_VERSION__)) {
+        setUpdateAvailable(true);
+        setLatestReleaseUrl(cachedUrl);
+      }
+      return;
+    }
+    runUpdateCheck();
+  }, [autoCheckUpdates, runUpdateCheck]);
+
+  function handleAutoCheckChange(checked) {
+    setAutoCheckUpdates(checked);
+    localStorage.setItem('autoCheckUpdates', String(checked));
+    if (!checked) {
+      setUpdateAvailable(false);
+      setLatestReleaseUrl(null);
+    } else {
+      runUpdateCheck();
+    }
+  }
 
   useEffect(() => {
     if (connected) {
@@ -288,6 +364,17 @@ export default function App() {
           <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest">Shure</span>
           <span className="text-zinc-200 font-bold tracking-wide">SCM820 Virtual Mixer</span>
           <span className="text-zinc-600 text-xs font-mono">v{__APP_VERSION__}</span>
+          <button
+            onClick={() => updateAvailable && window.open(latestReleaseUrl, '_blank')}
+            title={updateAvailable ? 'Update available — click to view release' : 'Up to date'}
+            className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] font-bold transition-colors ${
+              updateAvailable
+                ? 'border-amber-400 text-amber-400 hover:bg-amber-400/10 cursor-pointer'
+                : 'border-zinc-600 text-zinc-600 cursor-default'
+            }`}
+          >
+            i
+          </button>
         </div>
 
         {/* Zoom control */}
@@ -331,6 +418,8 @@ export default function App() {
                 onHostChange={handleHostChange}
                 xtouchInfo={xtouchInfo}
                 xtouchConnected={xtouchConnected}
+                autoCheckUpdates={autoCheckUpdates}
+                onAutoCheckChange={handleAutoCheckChange}
               />
             </>
           )}
