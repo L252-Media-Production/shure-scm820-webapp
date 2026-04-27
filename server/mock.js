@@ -20,11 +20,20 @@ function makeChannelState() {
     mute: 'OFF',
     gain: GAIN_0DB,
     alwaysOn: 'OFF',
+    alwaysOnB: 'OFF',
+    chairOverride: 'OFF',
+    chairMuteCtrl: 'OFF',
+    mixBus: 'BOTH',
+    hwGatingLogic: 'MIXBUS_A',
     intellimix: 'CLASSIC',
     gate: 'OFF',
     inputSource: 'Analog',
     phantomPower: 'OFF',
     micSens: 'LINE_LVL',
+    lowCutEnabled: 'OFF',
+    lowCutFreq: 80,
+    hiShelfEnabled: 'OFF',
+    hiShelfGain: 12,
   };
 }
 
@@ -65,6 +74,13 @@ export function startMock(port) {
       disableLeds: 'OFF',
       flash: 'OFF',
       rearPanelLock: 'UNLOCK',
+      autoMixMode: 'SINGLE',
+      dfr1Bypass: 'OFF',
+      dfr1AssignedChan: '020',
+      dfr1Freeze: 'OFF',
+      dfr2Bypass: 'OFF',
+      dfr2AssignedChan: '020',
+      dfr2Freeze: 'OFF',
     };
 
     let meterRate = 0;
@@ -94,6 +110,9 @@ export function startMock(port) {
       return String(raw).padStart(4, '0');
     }
 
+    function padFreq(f) { return String(f).padStart(3, '0'); }
+    function padHiShelf(g) { return String(g).padStart(3, '0'); }
+
     function sendInitialState(sock) {
       for (let ch = 1; ch <= INPUT_CHANNEL_COUNT; ch++) {
         const s = channels[ch];
@@ -106,6 +125,18 @@ export function startMock(port) {
         sock.write(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource) + '\r\n');
         sock.write(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens) + '\r\n');
+        sock.write(serializeRep(ch, 'LOW_CUT_ENABLE', s.lowCutEnabled) + '\r\n');
+        sock.write(serializeRep(ch, 'LOW_CUT_FREQ', padFreq(s.lowCutFreq)) + '\r\n');
+        sock.write(serializeRep(ch, 'HIGH_SHELF_ENABLE', s.hiShelfEnabled) + '\r\n');
+        sock.write(serializeRep(ch, 'HIGH_SHELF_GAIN', padHiShelf(s.hiShelfGain)) + '\r\n');
+        // Aux channel (9) doesn't have these IntelliMix params
+        if (ch <= 8) {
+          sock.write(serializeRep(ch, 'ALWAYS_ON_ENABLE_B', s.alwaysOnB) + '\r\n');
+          sock.write(serializeRep(ch, 'CHAIR_OVERRIDE_ENABLE_B', s.chairOverride) + '\r\n');
+          sock.write(serializeRep(ch, 'CHAIR_MUTE_CTRL_ENABLE_B', s.chairMuteCtrl) + '\r\n');
+          sock.write(serializeRep(ch, 'INPUT_AUDIO_MIX_BUS', s.mixBus) + '\r\n');
+          sock.write(serializeRep(ch, 'HW_GATING_LOGIC', s.hwGatingLogic) + '\r\n');
+        }
       }
       for (let ch = 10; ch <= 17; ch++) {
         sock.write(serializeRep(ch, 'DIRECT_OUT_SOURCE', channels[ch].directOutSource) + '\r\n');
@@ -117,6 +148,7 @@ export function startMock(port) {
         sock.write(serializeRep(ch, 'AUDIO_MUTE', s.mute) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain)) + '\r\n');
         sock.write(serializeRep(ch, 'AUDIO_OUT_LVL_SWITCH', s.audioOutLvlSwitch) + '\r\n');
+        sock.write(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix) + '\r\n');
       }
       // Global static device info
       for (const [param, value] of Object.entries(GLOBAL_STATIC)) {
@@ -128,6 +160,13 @@ export function startMock(port) {
       sock.write(serializeRep(null, 'HEADPHONE_SOURCE', deviceSettings.headphoneSource) + '\r\n');
       sock.write(serializeRep(null, 'DISABLE_LEDS', deviceSettings.disableLeds) + '\r\n');
       sock.write(serializeRep(null, 'REAR_PANEL_LOCK', deviceSettings.rearPanelLock) + '\r\n');
+      sock.write(serializeRep(null, 'AUTO_MIX_MODE', deviceSettings.autoMixMode) + '\r\n');
+      sock.write(serializeRep(null, 'DFR1_BYPASS', deviceSettings.dfr1Bypass) + '\r\n');
+      sock.write(serializeRep(null, 'DFR1_ASSIGNED_CHAN', deviceSettings.dfr1AssignedChan) + '\r\n');
+      sock.write(serializeRep(null, 'DFR1_FREEZE', deviceSettings.dfr1Freeze) + '\r\n');
+      sock.write(serializeRep(null, 'DFR2_BYPASS', deviceSettings.dfr2Bypass) + '\r\n');
+      sock.write(serializeRep(null, 'DFR2_ASSIGNED_CHAN', deviceSettings.dfr2AssignedChan) + '\r\n');
+      sock.write(serializeRep(null, 'DFR2_FREEZE', deviceSettings.dfr2Freeze) + '\r\n');
     }
 
     function handleGlobalGet(param, writeSingle) {
@@ -136,13 +175,20 @@ export function startMock(port) {
         return;
       }
       const dynamic = {
-        INPUT_METER_MODE: deviceSettings.inputMeterMode,
-        METER_TYPE:       deviceSettings.meterType,
-        HEADPHONE_SOURCE: deviceSettings.headphoneSource,
-        METER_RATE:       String(meterRate).padStart(5, '0'),
-        DISABLE_LEDS:     deviceSettings.disableLeds,
-        FLASH:            deviceSettings.flash,
-        REAR_PANEL_LOCK:  deviceSettings.rearPanelLock,
+        INPUT_METER_MODE:  deviceSettings.inputMeterMode,
+        METER_TYPE:        deviceSettings.meterType,
+        HEADPHONE_SOURCE:  deviceSettings.headphoneSource,
+        METER_RATE:        String(meterRate).padStart(5, '0'),
+        DISABLE_LEDS:      deviceSettings.disableLeds,
+        FLASH:             deviceSettings.flash,
+        REAR_PANEL_LOCK:   deviceSettings.rearPanelLock,
+        AUTO_MIX_MODE:     deviceSettings.autoMixMode,
+        DFR1_BYPASS:       deviceSettings.dfr1Bypass,
+        DFR1_ASSIGNED_CHAN: deviceSettings.dfr1AssignedChan,
+        DFR1_FREEZE:       deviceSettings.dfr1Freeze,
+        DFR2_BYPASS:       deviceSettings.dfr2Bypass,
+        DFR2_ASSIGNED_CHAN: deviceSettings.dfr2AssignedChan,
+        DFR2_FREEZE:       deviceSettings.dfr2Freeze,
       };
       if (param in dynamic) {
         writeSingle(serializeRep(null, param, dynamic[param]));
@@ -183,6 +229,40 @@ export function startMock(port) {
         case 'REAR_PANEL_LOCK':
           deviceSettings.rearPanelLock = value;
           broadcast(serializeRep(null, 'REAR_PANEL_LOCK', value));
+          break;
+        case 'AUTO_MIX_MODE':
+          deviceSettings.autoMixMode = value;
+          broadcast(serializeRep(null, 'AUTO_MIX_MODE', value));
+          break;
+        case 'DFR1_BYPASS':
+          deviceSettings.dfr1Bypass = value;
+          broadcast(serializeRep(null, 'DFR1_BYPASS', value));
+          break;
+        case 'DFR1_ASSIGNED_CHAN':
+          deviceSettings.dfr1AssignedChan = value;
+          broadcast(serializeRep(null, 'DFR1_ASSIGNED_CHAN', value));
+          break;
+        case 'DFR1_FREEZE':
+          deviceSettings.dfr1Freeze = value;
+          broadcast(serializeRep(null, 'DFR1_FREEZE', value));
+          break;
+        case 'DFR1_CLEAR_ALL_FILTERS':
+          debug('DFR1_CLEAR_ALL_FILTERS triggered');
+          break;
+        case 'DFR2_BYPASS':
+          deviceSettings.dfr2Bypass = value;
+          broadcast(serializeRep(null, 'DFR2_BYPASS', value));
+          break;
+        case 'DFR2_ASSIGNED_CHAN':
+          deviceSettings.dfr2AssignedChan = value;
+          broadcast(serializeRep(null, 'DFR2_ASSIGNED_CHAN', value));
+          break;
+        case 'DFR2_FREEZE':
+          deviceSettings.dfr2Freeze = value;
+          broadcast(serializeRep(null, 'DFR2_FREEZE', value));
+          break;
+        case 'DFR2_CLEAR_ALL_FILTERS':
+          debug('DFR2_CLEAR_ALL_FILTERS triggered');
           break;
         default:
           debug('Unhandled global SET param: %s', param);
@@ -233,10 +313,51 @@ export function startMock(port) {
             s.alwaysOn = value;
             broadcast(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', value));
             break;
+          case 'ALWAYS_ON_ENABLE_B':
+            s.alwaysOnB = value;
+            broadcast(serializeRep(ch, 'ALWAYS_ON_ENABLE_B', value));
+            break;
+          case 'CHAIR_OVERRIDE_ENABLE_B':
+            s.chairOverride = value;
+            broadcast(serializeRep(ch, 'CHAIR_OVERRIDE_ENABLE_B', value));
+            break;
+          case 'CHAIR_MUTE_CTRL_ENABLE_B':
+            s.chairMuteCtrl = value;
+            broadcast(serializeRep(ch, 'CHAIR_MUTE_CTRL_ENABLE_B', value));
+            break;
+          case 'INPUT_AUDIO_MIX_BUS':
+            s.mixBus = value;
+            broadcast(serializeRep(ch, 'INPUT_AUDIO_MIX_BUS', value));
+            break;
+          case 'HW_GATING_LOGIC':
+            s.hwGatingLogic = value;
+            broadcast(serializeRep(ch, 'HW_GATING_LOGIC', value));
+            break;
+          case 'SET_INTELLIMIX_MODE':
           case 'INTELLIMIX_MODE':
             s.intellimix = INTELLIMIX_MODES.includes(value) ? value : 'CLASSIC';
             broadcast(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix));
             break;
+          case 'LOW_CUT_ENABLE':
+            s.lowCutEnabled = value === 'ON' ? 'ON' : 'OFF';
+            broadcast(serializeRep(ch, 'LOW_CUT_ENABLE', s.lowCutEnabled));
+            break;
+          case 'LOW_CUT_FREQ': {
+            const freq = Math.max(25, Math.min(320, parseInt(value, 10) || 80));
+            s.lowCutFreq = freq;
+            broadcast(serializeRep(ch, 'LOW_CUT_FREQ', padFreq(freq)));
+            break;
+          }
+          case 'HIGH_SHELF_ENABLE':
+            s.hiShelfEnabled = value === 'ON' ? 'ON' : 'OFF';
+            broadcast(serializeRep(ch, 'HIGH_SHELF_ENABLE', s.hiShelfEnabled));
+            break;
+          case 'HIGH_SHELF_GAIN': {
+            const gain = Math.max(0, Math.min(24, parseInt(value, 10)));
+            s.hiShelfGain = isNaN(gain) ? 12 : gain;
+            broadcast(serializeRep(ch, 'HIGH_SHELF_GAIN', padHiShelf(s.hiShelfGain)));
+            break;
+          }
           case 'INPUT_AUDIO_SOURCE':
             s.inputSource = /^network|^dante/i.test(value) ? 'Network' : 'Analog';
             broadcast(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource));
@@ -276,16 +397,25 @@ export function startMock(port) {
         const s = channels[ch];
         if (!s) return;
         switch (param) {
-          case 'CHAN_NAME':          writeSingle(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`)); break;
-          case 'AUDIO_MUTE':        writeSingle(serializeRep(ch, 'AUDIO_MUTE', s.mute)); break;
-          case 'AUDIO_GAIN_HI_RES': writeSingle(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain))); break;
-          case 'ALWAYS_ON_ENABLE_A': writeSingle(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', s.alwaysOn)); break;
-          case 'INTELLIMIX_MODE':   writeSingle(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix)); break;
-          case 'INPUT_AUDIO_GATE_A': writeSingle(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate)); break;
-          case 'INPUT_AUDIO_SOURCE': writeSingle(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource)); break;
-          case 'PHANTOM_PWR_ENABLE': writeSingle(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower)); break;
-          case 'AUDIO_IN_LVL_SWITCH': writeSingle(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens)); break;
-          case 'DIRECT_OUT_SOURCE': writeSingle(serializeRep(ch, 'DIRECT_OUT_SOURCE', s.directOutSource ?? 'POST_FADER')); break;
+          case 'CHAN_NAME':             writeSingle(serializeRep(ch, 'CHAN_NAME', `{${s.name.padEnd(31)}}`)); break;
+          case 'AUDIO_MUTE':           writeSingle(serializeRep(ch, 'AUDIO_MUTE', s.mute)); break;
+          case 'AUDIO_GAIN_HI_RES':    writeSingle(serializeRep(ch, 'AUDIO_GAIN_HI_RES', padGain(s.gain))); break;
+          case 'ALWAYS_ON_ENABLE_A':   writeSingle(serializeRep(ch, 'ALWAYS_ON_ENABLE_A', s.alwaysOn)); break;
+          case 'ALWAYS_ON_ENABLE_B':   writeSingle(serializeRep(ch, 'ALWAYS_ON_ENABLE_B', s.alwaysOnB ?? 'OFF')); break;
+          case 'CHAIR_OVERRIDE_ENABLE_B': writeSingle(serializeRep(ch, 'CHAIR_OVERRIDE_ENABLE_B', s.chairOverride ?? 'OFF')); break;
+          case 'CHAIR_MUTE_CTRL_ENABLE_B': writeSingle(serializeRep(ch, 'CHAIR_MUTE_CTRL_ENABLE_B', s.chairMuteCtrl ?? 'OFF')); break;
+          case 'INPUT_AUDIO_MIX_BUS':  writeSingle(serializeRep(ch, 'INPUT_AUDIO_MIX_BUS', s.mixBus ?? 'BOTH')); break;
+          case 'HW_GATING_LOGIC':      writeSingle(serializeRep(ch, 'HW_GATING_LOGIC', s.hwGatingLogic ?? 'MIXBUS_A')); break;
+          case 'INTELLIMIX_MODE':      writeSingle(serializeRep(ch, 'INTELLIMIX_MODE', s.intellimix)); break;
+          case 'INPUT_AUDIO_GATE_A':   writeSingle(serializeRep(ch, 'INPUT_AUDIO_GATE_A', s.gate)); break;
+          case 'INPUT_AUDIO_SOURCE':   writeSingle(serializeRep(ch, 'INPUT_AUDIO_SOURCE', s.inputSource)); break;
+          case 'PHANTOM_PWR_ENABLE':   writeSingle(serializeRep(ch, 'PHANTOM_PWR_ENABLE', s.phantomPower)); break;
+          case 'AUDIO_IN_LVL_SWITCH':  writeSingle(serializeRep(ch, 'AUDIO_IN_LVL_SWITCH', s.micSens)); break;
+          case 'LOW_CUT_ENABLE':       writeSingle(serializeRep(ch, 'LOW_CUT_ENABLE', s.lowCutEnabled ?? 'OFF')); break;
+          case 'LOW_CUT_FREQ':         writeSingle(serializeRep(ch, 'LOW_CUT_FREQ', padFreq(s.lowCutFreq ?? 80))); break;
+          case 'HIGH_SHELF_ENABLE':    writeSingle(serializeRep(ch, 'HIGH_SHELF_ENABLE', s.hiShelfEnabled ?? 'OFF')); break;
+          case 'HIGH_SHELF_GAIN':      writeSingle(serializeRep(ch, 'HIGH_SHELF_GAIN', padHiShelf(s.hiShelfGain ?? 12))); break;
+          case 'DIRECT_OUT_SOURCE':    writeSingle(serializeRep(ch, 'DIRECT_OUT_SOURCE', s.directOutSource ?? 'POST_FADER')); break;
           case 'AUDIO_OUT_LVL_SWITCH': writeSingle(serializeRep(ch, 'AUDIO_OUT_LVL_SWITCH', s.audioOutLvlSwitch ?? 'LINE_LVL')); break;
           default:
             debug('Unhandled GET param: %s', param);

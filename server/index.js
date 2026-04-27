@@ -45,6 +45,9 @@ const GLOBAL_PARAMS = [
   'IP_ADDR_NET_AUDIO_PRIMARY', 'IP_SUBNET_NET_AUDIO_PRIMARY', 'IP_GATEWAY_NET_AUDIO_PRIMARY',
   'IP_ADDR_NET_AUDIO_SECONDARY', 'IP_SUBNET_NET_AUDIO_SECONDARY', 'IP_GATEWAY_NET_AUDIO_SECONDARY',
   'INPUT_METER_MODE', 'METER_TYPE', 'HEADPHONE_SOURCE', 'DISABLE_LEDS', 'REAR_PANEL_LOCK',
+  'AUTO_MIX_MODE',
+  'DFR1_BYPASS', 'DFR1_ASSIGNED_CHAN', 'DFR1_FREEZE',
+  'DFR2_BYPASS', 'DFR2_ASSIGNED_CHAN', 'DFR2_FREEZE',
 ];
 
 const deviceConfig = {
@@ -124,6 +127,11 @@ function requestInitialState(bridge) {
     get(ch, 'LOW_CUT_FREQ');
     get(ch, 'HIGH_SHELF_ENABLE');
     get(ch, 'HIGH_SHELF_GAIN');
+    get(ch, 'ALWAYS_ON_ENABLE_B');
+    get(ch, 'CHAIR_OVERRIDE_ENABLE_B');
+    get(ch, 'CHAIR_MUTE_CTRL_ENABLE_B');
+    get(ch, 'INPUT_AUDIO_MIX_BUS');
+    get(ch, 'HW_GATING_LOGIC');
   }
   // Aux channel — no always-on, phantom power, level switch
   get(AUX_CHANNEL, 'CHAN_NAME');
@@ -141,6 +149,7 @@ function requestInitialState(bridge) {
     get(ch, 'AUDIO_MUTE');
     get(ch, 'AUDIO_GAIN_HI_RES');
     get(ch, 'AUDIO_OUT_LVL_SWITCH');
+    get(ch, 'INTELLIMIX_MODE');
   }
   for (const p of GLOBAL_PARAMS) get(null, p);
 

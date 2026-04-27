@@ -70,6 +70,7 @@ const NOTE_VPOT_PUSH_BASE = 32;  // notes 32-39 = encoder pushes for strips 1-8
 const NOTE_ASSIGN_TRACK = 40;   // 0x28 → lo-cut mode
 const NOTE_ASSIGN_PAN   = 42;   // 0x2A → hi-shelf mode
 const NOTE_ASSIGN_EQ    = 44;   // 0x2C → fine gain mode
+const NOTE_FLIP         = 50;   // 0x32 → mute toggle for Mix A (ch18) + Mix B (ch19)
 
 // V-Pot encoder CC range
 const CC_ENCODER_BASE = 16;     // CC 16-23 = encoders 1-8
@@ -160,7 +161,7 @@ export function createXtouchBridge(localPort = 5004) {
   // Shadow state for channels 1-8 (index = channel - 1)
   const channels = Array.from({ length: 8 }, defaultChannelState);
   // Shadow for master outputs (index 0 = ch18, index 1 = ch19)
-  const master   = [{ gain: 1100 }, { gain: 1100 }];
+  const master   = [{ gain: 1100, mute: false }, { gain: 1100, mute: false }];
 
   // Timestamps of last X-Touch fader touch per strip (0-7) or 'master'
   const faderTouchedAt = new Map();
@@ -348,6 +349,14 @@ export function createXtouchBridge(localPort = 5004) {
       syncEncoderModeLeds();
       console.log(`[xtouch] Encoder mode: ${encoderMode ?? 'off'}`);
       debug('encoder mode → %s', encoderMode ?? 'off');
+
+    } else if (note === NOTE_FLIP) {
+      // FLIP: toggle mute on Mix A (ch18) and Mix B (ch19) together
+      const willMute = !master[0].mute;
+      debug('FLIP pressed → AUDIO_MUTE %s on ch18+19', willMute ? 'ON' : 'OFF');
+      console.log(`[xtouch] FLIP pressed → AUDIO_MUTE TOGGLE (ch18+19)`);
+      emitter.emit('command', { type: 'SET', channel: 18, param: 'AUDIO_MUTE', value: 'TOGGLE' });
+      emitter.emit('command', { type: 'SET', channel: 19, param: 'AUDIO_MUTE', value: 'TOGGLE' });
     }
   });
 
@@ -452,14 +461,21 @@ export function createXtouchBridge(localPort = 5004) {
         }
       }
     } else if (channel === 18 || channel === 19) {
+      const mIdx = channel - 18;
       if (param === 'AUDIO_GAIN_HI_RES') {
         const gain  = parseInt(value, 10);
-        const mIdx  = channel - 18;
         master[mIdx].gain = gain;
         const touchedAt   = faderTouchedAt.get('master');
         // Only push if not in echo window and both outputs agree (use ch18 as canonical)
         if ((!touchedAt || Date.now() - touchedAt > ECHO_SUPPRESS_MS) && mIdx === 0) {
           midi.sendPitchBend(8, gainToFader(gain));
+        }
+      } else if (param === 'AUDIO_MUTE') {
+        const muted = value === 'ON';
+        master[mIdx].mute = muted;
+        // Use ch18 as canonical state for FLIP LED
+        if (mIdx === 0) {
+          midi.sendNoteOn(0, NOTE_FLIP, muted ? LED_ON : LED_OFF);
         }
       }
     }
@@ -509,8 +525,9 @@ export function createXtouchBridge(localPort = 5004) {
         midi.sendSysex(scribbleSysex(idx, '       ', 1));
       }
     }
-    // Master fader: use ch18 gain
+    // Master fader: use ch18 gain; FLIP LED: use ch18 mute
     midi.sendPitchBend(8, gainToFader(master[0].gain));
+    midi.sendNoteOn(0, NOTE_FLIP, master[0].mute ? LED_ON : LED_OFF);
     // Restore encoder assign mode LEDs
     syncEncoderModeLeds();
   }
