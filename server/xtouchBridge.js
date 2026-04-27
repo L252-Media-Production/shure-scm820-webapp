@@ -100,10 +100,11 @@ const MIC_LEVEL_LABELS = {
 
 // X-Touch scribble color byte values (used in color sysex)
 // Bit 6 (0x40) inverts: colored background instead of colored text
-const COLOR_BLACK  = 0x00;
-const COLOR_RED    = 0x41;  // red bg, black text (inverted)
-const COLOR_GREEN  = 0x42;  // green bg, black text (inverted)
-const COLOR_YELLOW = 0x43;  // yellow bg, black text (inverted)
+// 0x00 = display off (backlight off) — do NOT use as a default; use 0x07 (white) instead
+const COLOR_DEFAULT = 0x07;  // white text, dark background — strips stay visible
+const COLOR_RED     = 0x41;  // red bg, black text (inverted)
+const COLOR_GREEN   = 0x42;  // green bg, black text (inverted)
+const COLOR_YELLOW  = 0x43;  // yellow bg, black text (inverted)
 
 // Peak-hold meter settings (SAMPLE arrives every ~100ms)
 const PEAK_HOLD_MS         = 1500;
@@ -222,7 +223,7 @@ export function createXtouchBridge(localPort = 5004) {
   // Combines encoder mode state + AUX bank state so the two never conflict.
 
   function syncAllColors() {
-    const colors = new Array(8).fill(COLOR_BLACK);
+    const colors = new Array(8).fill(COLOR_DEFAULT);
     for (let idx = 0; idx < 8; idx++) {
       if (encoderMode === 'locut') {
         colors[idx] = channels[idx].lowCutEnabled ? COLOR_GREEN : COLOR_RED;
