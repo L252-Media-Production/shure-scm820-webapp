@@ -29,6 +29,9 @@ Browser (React) ←→ WebSocket ←→ Node.js bridge server ←→ TCP port 22
 - Docker support for network-accessible deployment
 - Mock SCM820 server for local development without hardware
 - **Behringer X-Touch hardware control surface** via Apple MIDI / RTP-MIDI over the network
+- **X-Touch AUX bank swap** — FADER BANK LEFT/RIGHT toggles any configurable strip (default strip 8) between its normal input channel and the SCM820 AUX input (ch 9); configurable from the status panel
+- **X-Touch encoder mode scribble colors** — scribble strip backgrounds turn green (effect ON) or red (effect OFF) when lo-cut or hi-shelf encoder mode is active; strips return to white when the mode is deactivated
+- **X-Touch peak-hold metering** — channel meters hold the peak value for 1.5 s then decay smoothly rather than snapping to zero on silence
 
 ## Stack
 
@@ -151,9 +154,12 @@ Once connected, the status indicator in the browser UI shows **Connected** along
 | **Scribble line 1** | Channel name from the SCM820 |
 | **Scribble line 2** | Last-touched parameter (gain dB, mute state, mic sensitivity, 48V state, lo-cut freq, hi-shelf gain) |
 | **Channel meters** | Live SCM820 input levels (SAMPLE frames at 100 ms) |
-| **Encoder Assign — TRACK** | Switch encoders to **lo-cut mode**: rotate = `LOW_CUT_FREQ` (25–320 Hz, 1 Hz/click); push = toggle `LOW_CUT_ENABLE` |
-| **Encoder Assign — PAN** | Switch encoders to **hi-shelf mode**: rotate = `HIGH_SHELF_GAIN` (±12 dB, 1 dB/click); push = toggle `HIGH_SHELF_ENABLE` |
+| **Encoder Assign — TRACK** | Switch encoders to **lo-cut mode**: rotate = `LOW_CUT_FREQ` (25–320 Hz, 1 Hz/click); push = toggle `LOW_CUT_ENABLE`; scribble bg = green (enabled) / red (disabled) |
+| **Encoder Assign — PAN** | Switch encoders to **hi-shelf mode**: rotate = `HIGH_SHELF_GAIN` (±12 dB, 1 dB/click); push = toggle `HIGH_SHELF_ENABLE`; scribble bg = green (enabled) / red (disabled) |
 | **Encoder Assign — EQ** | Switch encoders to **fine gain mode**: rotate = `AUDIO_GAIN_HI_RES` in small increments |
+| **Pressing the active Encoder Assign button again** | Deactivates encoder mode; scribble strips return to white with channel name / last-touched status |
+| **FADER BANK LEFT / RIGHT** | Toggle **AUX bank swap**: the configured strip (default strip 8) switches between its normal input channel and the SCM820 AUX input (ch 9); the swapped strip turns yellow while active |
+| **AUX swap strip** | Configurable (strips 1–8) via the **X-Touch** section of the status panel; default strip 8; setting is persisted across sessions |
 
 ### Fader calibration
 
@@ -165,7 +171,7 @@ The X-Touch MCU fader range is mapped to the SCM820 gain range using a **two-seg
 | Unity mark (~77%) | 1100 | 0 dB |
 | Full open (16383) | 1200 | +10 dB |
 
-The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range of +10 dB to +18 dB is not reachable from the fader (use the web UI for that range).
+The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range of +10 dB to +18 dB is not reachable from the fader (use the web UI for that range). The same map applies when a strip is in AUX bank swap mode.
 
 ### Multiple X-Touch units
 
@@ -176,7 +182,9 @@ The X-Touch physically tops out at +10 dB in MCU mode; the SCM820's upper range 
 | Issue | Details |
 |---|---|
 | **X-Touch fader calibration drift** | The two-segment piecewise linear map anchors at 0 dB and +10 dB, but the X-Touch MCU fader physical response is not perfectly linear. Small discrepancies (±1–2 dB) can appear between the X-Touch fader position and the actual SCM820 gain, particularly in the lower half of the travel. |
-| **AUX input (channel 9) not mapped on X-Touch** | The SCM820 aux input (channel 9) has no corresponding strip on the X-Touch. EQ and all other parameters for channel 9 are controllable from the web UI only. |
+| **AUX gain range +10 dB to +18 dB not reachable via fader** | When the AUX bank swap is active, the swapped strip fader tops out at +10 dB (X-Touch MCU maximum), matching the same limit as input channel faders. Gains above +10 dB for the AUX channel require the web UI. |
+| **EQ parameters (lo-cut / hi-shelf) not available for AUX in bank swap mode** | When AUX bank swap is active, encoder modes (lo-cut, hi-shelf, fine gain) still operate on the underlying input channel, not on ch 9. AUX EQ is controllable from the web UI only. |
+| **Changing AUX swap strip while bank is active deactivates the bank** | Selecting a different strip from the settings panel while the AUX bank is active will deactivate the swap before switching to the new strip. Re-trigger FADER BANK to reactivate. |
 
 ## Fader Resolution
 
