@@ -37,8 +37,8 @@ async function installPage(request, env) {
     <h2>Install (Chrome, desktop)</h2>
     <ol>
       <li>Open <code>chrome://flags/#enable-isolated-web-app-dev-mode</code>, enable it, and relaunch Chrome.</li>
-      <li>Open <code>chrome://web-app-internals</code> and choose <b>Install IWA from Signed Web Bundle</b>.</li>
-      <li>Select the downloaded <code>.swbn</code>. Launch <b>SCM820 Virtual Mixer</b> from the app list.</li>
+      <li>Open <code>chrome://iwa-dev</code> (older Chrome: <code>chrome://web-app-internals</code>) → <b>Install</b> → <b>Signed Bundle</b> tab → pick the downloaded <code>.swbn</code>. The <b>Update Manifest</b> tab can install straight from <code>${escapeHtml(origin + MANIFEST_PATH)}</code>.</li>
+      <li>Launch <b>SCM820 Virtual Mixer</b> from the app list.</li>
       <li>Enter the SCM820's IP address. Allow USB MIDI when asked to use an X-Touch.</li>
     </ol>
     <p class="muted">Installed copies check the update manifest every few hours; use <b>Update</b> in web-app-internals to force a check.</p>`
