@@ -1,5 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useMixerStore } from '../state/mixerStore.js';
+import { createDirectSocket, getBackend } from '../backend/directBackend.js';
+
+// 'direct' = Isolated Web App build: TCP to the SCM820 via Direct Sockets, X-Touch via Web MIDI.
+// Otherwise the page talks to the Node bridge over WebSocket (Docker / dev server).
+const USE_DIRECT = import.meta.env.VITE_TRANSPORT === 'direct';
 
 const WS_URL =
   import.meta.env.VITE_WS_URL ||
@@ -93,6 +98,7 @@ export function useSCM820() {
   }, []);
 
   const updateDeviceHost = useCallback(async (host) => {
+    if (USE_DIRECT) { getBackend().setHost(host); return true; }
     try {
       const resp = await fetch(`${API_URL}/api/config`, {
         method: 'POST',
@@ -106,6 +112,7 @@ export function useSCM820() {
   }, []);
 
   const updateXtouchConfig = useCallback(async ({ auxSwapStrip }) => {
+    if (USE_DIRECT) { getBackend().setAuxSwapStrip(auxSwapStrip); return true; }
     try {
       const resp = await fetch(`${API_URL}/api/xtouch`, {
         method: 'POST',
@@ -118,6 +125,9 @@ export function useSCM820() {
     }
   }, []);
 
+  const enableXtouch = useCallback(() => {
+    if (USE_DIRECT) getBackend().enableXtouch();
+  }, []);
 
   useEffect(() => {
     let ws;
@@ -126,7 +136,7 @@ export function useSCM820() {
 
     function connect() {
       if (cancelled) return;
-      ws = new WebSocket(WS_URL);
+      ws = USE_DIRECT ? createDirectSocket() : new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -246,6 +256,8 @@ export function useSCM820() {
           case 'XTOUCH_CONFIG':
             setXtouchInfo({
               localPort: msg.localPort ?? 5004,
+              transport: msg.transport ?? 'rtpmidi',
+              needsPermission: msg.needsPermission ?? false,
               ...(msg.host !== undefined ? { connectedHost: msg.host } : {}),
             });
             setXtouchConnected(msg.connected ?? false);
@@ -264,5 +276,5 @@ export function useSCM820() {
     };
   }, [setConnected, applyRep, applyDeviceParam, setDeviceInfo, setXtouchConnected, setXtouchInfo]);
 
-  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, loadingProgress };
+  return { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, enableXtouch, loadingProgress };
 }

@@ -8,13 +8,28 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { version } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
 
-export default defineConfig({
+const SERVER_DIR = path.resolve(__dirname, '../server');
+const SHIMS_DIR = path.resolve(__dirname, 'src/backend/shims');
+
+// `vite build --mode iwa` produces the Isolated Web App payload: no service worker / PWA
+// manifest (the IWA gets its own manifest at build time) and the Direct Sockets transport.
+export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
+  resolve: {
+    alias: {
+      // Code shared with the Node server: protocol parser and the X-Touch MCU bridge.
+      '@server': SERVER_DIR,
+      // xtouchBridge.js imports these two Node-flavoured packages.
+      events: path.join(SHIMS_DIR, 'events.js'),
+      debug: path.join(SHIMS_DIR, 'debug.js'),
+    },
+  },
+  build: mode === 'iwa' ? { outDir: 'dist-iwa', emptyOutDir: true } : undefined,
   plugins: [
     react(),
-    VitePWA({
+    mode !== 'iwa' && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
@@ -51,4 +66,4 @@ export default defineConfig({
     cors: true,
     allowedHosts: 'all',
   },
-});
+}));

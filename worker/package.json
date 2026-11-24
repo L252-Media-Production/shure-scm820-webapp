@@ -1,0 +1,13 @@
+{
+  "name": "scm820-iwa-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stage": "node scripts/stage.mjs",
+    "dev": "wrangler dev",
+    "deploy": "npm run stage && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

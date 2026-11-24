@@ -9,6 +9,14 @@ This project is a web-based virtual mixer that connects to a **Shure SCM820** au
 Browser (React) ←→ WebSocket (ws://) ←→ Node.js bridge server ←→ TCP socket (port 2202) ←→ SCM820
 ```
 
+**Isolated Web App mode** (`vite build --mode iwa`, `VITE_TRANSPORT=direct`): there is no bridge server.
+`client/src/backend/` replaces `server/index.js` + `bridge.js` inside the page — `scm820Link.js` (Direct Sockets `TCPSocket`),
+`webMidiPort.js` (X-Touch over USB), `directBackend.js` (speaks the same JSON messages the WebSocket server used, so
+`useSCM820` only swaps its connection factory). `server/parser.js` and `server/xtouchBridge.js` are shared by both modes
+(Vite alias `@server`); `xtouchBridge` receives its MIDI port by injection (RTP-MIDI on the server, Web MIDI in the IWA).
+`worker/` is a Cloudflare Worker that only distributes the signed bundle and update manifest. Keep `xtouchBridge.js` free of
+Node-only imports beyond `events`/`debug` (shimmed for the browser).
+
 ---
 
 ## SCM820 protocol

@@ -11,3 +11,7 @@ client/.env*
 README.md
 CLAUDE.md
 SCM820-command-strings.pdf
+client/dist-iwa
+client/iwa-out
+client/iwa-signing-key.pem
+worker

@@ -122,6 +122,51 @@ docker build --build-arg VITE_WS_URL=ws://mixer.local:80 -t scm820-webapp .
 | `USE_MOCK` | `false` | Set to `true` to use the built-in mock device |
 | `XTOUCH_PORT` | `5004` | UDP control port for the X-Touch Apple MIDI session (data port = this + 1) |
 
+## Chrome Isolated Web App (no server) + Cloudflare Worker
+
+The same UI can run entirely inside Chrome as an **Isolated Web App (IWA)**. There is no Node bridge: the page opens the SCM820's TCP port 2202 itself with the [Direct Sockets API](https://developer.chrome.com/docs/iwa/direct-sockets), and the Behringer X-Touch is driven over **USB via Web MIDI**.
+
+```
+Chrome (IWA) ←→ Direct Sockets TCP :2202 ←→ SCM820
+      ↕ Web MIDI (USB)
+  X-Touch (MC mode)
+
+Cloudflare Worker  →  hosts update.json + signed .swbn + install page (delivery only)
+```
+
+An IWA can't be loaded from a live URL — Chrome installs a *signed bundle* — so the Worker only distributes the bundle and its update manifest. Browsers on the LAN reach the mixer directly; nothing about the device is exposed to the internet.
+
+### Build and publish
+
+```bash
+cd client
+npm run iwa:key            # once: creates iwa-signing-key.pem (gitignored) and prints the Web Bundle ID
+IWA_UPDATE_MANIFEST_URL=https://scm820-iwa.<your-subdomain>.workers.dev/update.json npm run build:iwa
+cd ../worker
+npm install
+npx wrangler login         # once
+npm run deploy             # stages client/iwa-out → worker/public, then wrangler deploy
+```
+
+**Back up `iwa-signing-key.pem`.** The app's identity (Web Bundle ID) is derived from it. Lose it and installed copies can never be updated; leak it and anyone can ship updates as you. Bump `client/package.json`'s `version` for each release — the update manifest keeps earlier versions.
+
+### Install (Chrome desktop)
+
+1. `chrome://flags/#enable-isolated-web-app-dev-mode` → Enabled → relaunch.
+2. Open the Worker URL, download the `.swbn`.
+3. `chrome://web-app-internals` → **Install IWA from Signed Web Bundle** → pick the file.
+4. Launch **SCM820 Virtual Mixer**, enter the device IP. Click **Enable USB MIDI** in the status panel to use an X-Touch.
+
+Managed fleets can force-install through the `IsolatedWebAppInstallForceList` policy (Web Bundle ID + update manifest URL); Chrome 143+ additionally requires the app to be on Google's IWA allowlist for policy installs.
+
+### Local development
+
+`npm run dev:iwa --prefix client` serves the app with the direct transport; install it through *Install IWA with Dev Mode Proxy* on `chrome://web-app-internals`. Run `npm run mock --prefix server` for a fake device on `127.0.0.1:2202`.
+
+X-Touch port matching defaults to any MIDI port whose name contains `x-touch`; override with `localStorage.setItem('scm820.midiPortName', '<substring>')` in the app's DevTools.
+
+> The SCM820 accepts a limited number of simultaneous TCP control connections. The IWA keeps one shared connection for all its windows, but don't run it at the same time as the Docker server pointed at the same device.
+
 ## Behringer X-Touch Integration
 
 The server acts as an **Apple MIDI (RTP-MIDI) acceptor**. The X-Touch initiates the connection — no IP address needs to be configured in the app. The server listens on two adjacent UDP ports (default 5004 control / 5005 data) and waits for the X-Touch to connect.
@@ -213,6 +258,7 @@ The console shows a live, timestamped log of all inbound (`←`) and outbound (`
 /
 ├── Dockerfile
 ├── compose.yml
+├── worker/               # Cloudflare Worker: update manifest, signed bundles, install page
 ├── server/
 │   ├── index.js          # HTTP + WebSocket server entry point; serves client/dist
 │   ├── bridge.js         # TCP ↔ WebSocket bridge with auto-reconnect
@@ -222,7 +268,9 @@ The console shows a live, timestamped log of all inbound (`←`) and outbound (`
 │   └── rtpmidiClient.js  # Pure-JS Apple MIDI (RTP-MIDI) server — accepts X-Touch sessions
 │
 └── client/
+    ├── scripts/          # gen-iwa-key.mjs, build-iwa.mjs (Vite → Web Bundle → signed .swbn)
     └── src/
+        ├── backend/      # IWA-only: TCP link, Web MIDI port, in-page replacement for server/index.js
         ├── hooks/
         │   ├── useSCM820.js     # WebSocket connection, message dispatch, debug log
         │   └── useMetering.js   # SAMPLE frame → Canvas meter rendering

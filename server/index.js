@@ -10,6 +10,7 @@ import debugLib from 'debug';
 import { createBridge } from './bridge.js';
 import { startMock } from './mock.js';
 import { createXtouchBridge } from './xtouchBridge.js';
+import { createRtpMidiServer } from './rtpmidiClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.resolve(__dirname, '../client/dist');
@@ -66,7 +67,7 @@ function startXtouchBridge() {
   console.log(`[server] X-Touch bridge listening on UDP :${XTOUCH_LOCAL_PORT} (control) / :${XTOUCH_LOCAL_PORT + 1} (data)`);
   console.log(`[server] Point your X-Touch network destination to this server's IP on port ${XTOUCH_LOCAL_PORT}`);
 
-  xtouchBridge = createXtouchBridge(XTOUCH_LOCAL_PORT);
+  xtouchBridge = createXtouchBridge(createRtpMidiServer(XTOUCH_LOCAL_PORT));
 
   xtouchBridge.emitter.on('connected', ({ host }) => {
     debug('X-Touch connected from %s', host);

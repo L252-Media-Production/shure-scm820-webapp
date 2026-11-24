@@ -5,3 +5,9 @@ client/dist/
 .env
 server/.env
 *.log
+client/dist-iwa/
+client/iwa-out/
+client/iwa-signing-key.pem
+worker/node_modules/
+worker/public/
+worker/.wrangler/

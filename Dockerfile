@@ -9,6 +9,8 @@ COPY client/package.json client/package-lock.json* ./client/
 RUN npm ci --prefix client
 
 COPY client/ ./client/
+# Shared with the Node server; the client imports them via the @server alias
+COPY server/parser.js server/xtouchBridge.js ./server/
 
 # Optional: override the WebSocket URL baked into the client bundle.
 # Defaults to window.location.hostname:8080 at runtime (no arg needed for standard setups).

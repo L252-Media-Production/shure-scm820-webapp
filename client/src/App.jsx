@@ -7,6 +7,8 @@ import { DebugDrawer } from './components/DebugDrawer.jsx';
 
 const GITHUB_RELEASES_API = 'https://api.github.com/repos/L252-Media-Production/shure-scm820-webapp/releases/latest';
 const UPDATE_CHECK_MS = 24 * 60 * 60 * 1000;
+// In the Isolated Web App build Chrome updates the app itself from the update manifest.
+const IS_IWA = import.meta.env.VITE_TRANSPORT === 'direct';
 
 function semverGt(a, b) {
   const parse = (v) => v.replace(/^v/, '').split('.').map(Number);
@@ -46,7 +48,7 @@ function SegBtn({ active, onClick, children }) {
   );
 }
 
-function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, autoCheckUpdates, onAutoCheckChange, auxSwapStrip, onAuxSwapStripChange }) {
+function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInfo, xtouchConnected, onEnableXtouch, autoCheckUpdates, onAutoCheckChange, auxSwapStrip, onAuxSwapStripChange }) {
   const [host, setHost] = useState(deviceInfo.host || '');
   const [expanded, setExpanded] = useState(false);
   const [lastActiveRate, setLastActiveRate] = useState(1000);
@@ -247,12 +249,27 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
         </div>
         <div className="text-xs text-zinc-400 font-mono">
           {xtouchConnected
-            ? `Connected from ${xtouchInfo.connectedHost}`
-            : `Awaiting connection on :${xtouchInfo.localPort} / :${xtouchInfo.localPort + 1}`}
+            ? `Connected${xtouchInfo.transport === 'webmidi' ? ' via USB' : ' from'} ${xtouchInfo.connectedHost}`
+            : xtouchInfo.transport === 'webmidi'
+              ? 'Awaiting USB MIDI device'
+              : xtouchInfo.transport === 'unsupported'
+                ? 'Web MIDI is not available in this browser'
+                : `Awaiting connection on :${xtouchInfo.localPort} / :${xtouchInfo.localPort + 1}`}
         </div>
+        {!xtouchConnected && xtouchInfo.transport === 'webmidi' && xtouchInfo.needsPermission && (
+          <button
+            type="button"
+            onClick={onEnableXtouch}
+            className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded transition-colors"
+          >
+            Enable USB MIDI
+          </button>
+        )}
         {!xtouchConnected && (
           <div className="text-[10px] text-zinc-600 mt-1">
-            Set your X-Touch to MC slave mode and point it at this server's IP.
+            {xtouchInfo.transport === 'webmidi'
+              ? 'Plug the X-Touch in over USB and set it to MC (Mackie Control) mode.'
+              : "Set your X-Touch to MC slave mode and point it at this server's IP."}
           </div>
         )}
         <div className="mt-2 flex items-center justify-between gap-2">
@@ -273,6 +290,7 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
       </div>
 
       {/* Preferences */}
+      {!IS_IWA && (
       <div className="border-t border-zinc-700 pt-3 mt-1">
         <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Preferences</div>
         <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -285,12 +303,13 @@ function StatusPopover({ deviceInfo, connected, sendSet, onHostChange, xtouchInf
           <span className="text-xs text-zinc-400">Automatically Check For Updates?</span>
         </label>
       </div>
+      )}
     </div>
   );
 }
 
 export default function App() {
-  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, loadingProgress } = useSCM820();
+  const { sendSet, sendGet, sendTestCommand, meterLevelsRef, debugLogRef, updateDeviceHost, updateXtouchConfig, enableXtouch, loadingProgress } = useSCM820();
   const connected = useMixerStore((s) => s.connected);
   const deviceInfo = useMixerStore((s) => s.deviceInfo);
   const xtouchConnected = useMixerStore((s) => s.xtouchConnected);
@@ -328,7 +347,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!autoCheckUpdates) return;
+    if (IS_IWA || !autoCheckUpdates) return;
     const lastCheck = parseInt(localStorage.getItem('updateLastCheck') || '0', 10);
     const cachedTag = localStorage.getItem('updateLatestTag') || '';
     const cachedUrl = localStorage.getItem('updateLatestUrl') || '';
@@ -445,6 +464,7 @@ export default function App() {
                 onHostChange={handleHostChange}
                 xtouchInfo={xtouchInfo}
                 xtouchConnected={xtouchConnected}
+                onEnableXtouch={enableXtouch}
                 autoCheckUpdates={autoCheckUpdates}
                 onAutoCheckChange={handleAutoCheckChange}
                 auxSwapStrip={auxSwapStrip}

@@ -43,7 +43,6 @@
  *   Fader and mute for the swapped strip are routed to ch9 when active.
  */
 
-import { createRtpMidiServer } from './rtpmidiClient.js';
 import { EventEmitter } from 'events';
 import debugLib from 'debug';
 
@@ -179,13 +178,17 @@ function defaultChannelState() {
 }
 
 /**
- * @param {number} localPort     Local UDP control port to listen on (default 5004); data = localPort + 1
+ * @param {object} midi  MIDI transport. Must provide `emitter` ('ready' {host}, 'disconnected', 'noteOn',
+ *                       'noteOff', 'pitchBend', 'controlChange', 'error'), `start()`, `destroy()`, and
+ *                       `sendNoteOn/sendNoteOff/sendPitchBend/sendChannelPressure/sendSysex`.
+ *                       Server: createRtpMidiServer(port) (Apple MIDI over UDP).
+ *                       Browser/IWA: createWebMidiPort() (USB via Web MIDI).
  * @returns {{ applyRep, applyMeter, destroy, connected, connectedHost, emitter, setAuxSwapStrip }}
  *
- * The X-Touch in MC master mode acts as the Apple MIDI initiator — it sends
- * IN packets to our server. We listen on localPort and accept the session.
+ * With the RTP-MIDI transport the X-Touch (MC master mode) initiates the Apple MIDI
+ * session; with Web MIDI the port is opened directly over USB.
  */
-export function createXtouchBridge(localPort = 5004) {
+export function createXtouchBridge(midi) {
   const emitter = new EventEmitter();
 
   // Shadow state for channels 1-8 (index = channel - 1)
@@ -216,8 +219,6 @@ export function createXtouchBridge(localPort = 5004) {
 
   let connected     = false;
   let connectedHost = null;
-
-  const midi = createRtpMidiServer(localPort);
 
   // ── Helper: compute and send all 8 strip colors in one sysex ──────────────
   // Combines encoder mode state + AUX bank state so the two never conflict.
