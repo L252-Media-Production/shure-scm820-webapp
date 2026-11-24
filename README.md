@@ -154,7 +154,7 @@ npm run deploy             # stages client/iwa-out → worker/public, then wrang
 
 1. `chrome://flags/#enable-isolated-web-app-dev-mode` → Enabled → relaunch.
 2. Open the Worker URL, download the `.swbn`.
-3. `chrome://web-app-internals` → **Install IWA from Signed Web Bundle** → pick the file.
+3. `chrome://iwa-dev` (older Chrome: `chrome://web-app-internals`) → **Install** → **Signed Bundle** tab → pick the file. The **Update Manifest** tab can install straight from the Worker's `update.json` URL.
 4. Launch **SCM820 Virtual Mixer**, enter the device IP. Click **Enable USB MIDI** in the status panel to use an X-Touch.
 
 Managed fleets can force-install through the `IsolatedWebAppInstallForceList` policy (Web Bundle ID + update manifest URL); Chrome 143+ additionally requires the app to be on Google's IWA allowlist for policy installs.

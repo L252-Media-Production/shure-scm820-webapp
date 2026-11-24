@@ -107,7 +107,7 @@ for (const file of walk(DIST)) {
   addFile(rel, file);
   if (rel === '/index.html') addFile('/', file);
 }
-builder.setPrimaryURL(`${origin}/`);
+// No primary URL: Chrome rejects signed IWA bundles that set one ("Primary URL must not be present").
 
 const signed = await wbnSign.SignedWebBundle.fromWebBundle(
   Buffer.from(builder.createBundle()),
