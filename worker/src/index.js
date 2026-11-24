@@ -41,7 +41,7 @@ async function installPage(request, env) {
       <li>Launch <b>SCM820 Virtual Mixer</b> from the app list.</li>
       <li>Enter the SCM820's IP address. Allow USB MIDI when asked to use an X-Touch.</li>
     </ol>
-    <p class="muted">Installed copies check the update manifest every few hours; use <b>Update</b> in web-app-internals to force a check.</p>`
+    <p class="muted">Chrome checks the update manifest on its own every few hours. To update sooner, open <code>chrome://iwa-dev</code> and, if the app's row has an update or refresh action, use it; otherwise reinstall from the <b>Update Manifest</b> tab using the <code>update.json</code> URL shown above.</p>`
     : '<p>No bundle has been published yet.</p>';
   const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SCM820 Virtual Mixer — install</title>

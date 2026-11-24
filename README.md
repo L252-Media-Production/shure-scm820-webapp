@@ -161,7 +161,7 @@ Managed fleets can force-install through the `IsolatedWebAppInstallForceList` po
 
 ### Local development
 
-`npm run dev:iwa --prefix client` serves the app with the direct transport; install it through *Install IWA with Dev Mode Proxy* on `chrome://web-app-internals`. Run `npm run mock --prefix server` for a fake device on `127.0.0.1:2202`.
+`npm run dev:iwa --prefix client` serves the app with the direct transport; install it through the dev mode proxy option on `chrome://iwa-dev` (older Chrome: *Install IWA with Dev Mode Proxy* on `chrome://web-app-internals`). Run `npm run mock --prefix server` for a fake device on `127.0.0.1:2202`.
 
 X-Touch port matching defaults to any MIDI port whose name contains `x-touch`; override with `localStorage.setItem('scm820.midiPortName', '<substring>')` in the app's DevTools.
 
