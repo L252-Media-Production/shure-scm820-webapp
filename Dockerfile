@@ -1,5 +1,5 @@
 # ── Stage 1: build the React client ──────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Root package.json is required — server has a "file:.." workspace dep on it
